@@ -1,0 +1,40 @@
+# --- sdd -------------------------------------------------------------------
+# config.yaml carries the sdd remote api-key. This repository is public, so it
+# stays out. If you want the project description versioned, commit this file
+# only after moving the key elsewhere.
+.sdd/config.yaml
+
+# --- local project config (use-computer's own .use-computer/) --------------
+.use-computer/.env
+.env
+.env.*
+!.env.example
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+.venv/
+venv/
+env/
+uv.lock
+
+# --- Tooling ---------------------------------------------------------------
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Node (sdd is an npm CLI) ---------------------------------------------
+node_modules/
+
+# --- Editor / OS -----------------------------------------------------------
+.DS_Store
+.vscode/
+.idea/
