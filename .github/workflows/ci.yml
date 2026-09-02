@@ -1,0 +1,139 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+
+# The package lives under code/ in this SDD repository. GitHub only reads workflows from the
+# repository root, so the workflow lives here and every step runs in code/.
+defaults:
+  run:
+    working-directory: code
+
+env:
+  # rich enables colour inside GitHub Actions, and its highlighter splits an option token
+  # across styled spans -- so substring assertions pass locally and fail here.
+  TERM: dumb
+  COLUMNS: "200"
+  NO_COLOR: "1"
+
+jobs:
+  test:
+    name: test (py${{ matrix.python }}, typer ${{ matrix.typer }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both ends of the supported typer range. The floor is the version actually tested:
+        # a floor nobody runs is a floor nobody can trust.
+        include:
+          - python: "3.10"
+            typer: "0.16.0"
+          - python: "3.12"
+            typer: "latest"
+          - python: "3.12"
+            typer: "0.16.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python ${{ matrix.python }}
+        run: uv venv --python ${{ matrix.python }}
+
+      # uv.lock is deliberately not committed, so this resolves the way a user installing from
+      # PyPI does.
+      - name: Install
+        run: uv pip install -e ".[dev,local,vnc]"
+
+      - name: Pin typer to the tested floor
+        if: matrix.typer != 'latest'
+        run: uv pip install "typer==${{ matrix.typer }}"
+
+      - name: Report the resolved versions
+        run: |
+          uv pip show typer | head -2
+          uv run python -c "import typer, rich, pydantic; print(typer.__version__, rich.__version__, pydantic.VERSION)"
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Test
+        run: uv run pytest
+
+      - name: The CLI must work with no extras installed
+        run: |
+          uv venv --python ${{ matrix.python }} .venv-bare
+          VIRTUAL_ENV=.venv-bare uv pip install -e .
+          VIRTUAL_ENV=.venv-bare uv run use-computer --help
+          VIRTUAL_ENV=.venv-bare uv run use-computer --version
+
+  build:
+    name: build
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build
+        run: uv build
+
+      - name: The wheel must contain the bundled SKILL.md
+        # A skill that is not in the wheel does not exist for anyone who installed from PyPI.
+        run: |
+          python - <<'PY'
+          import pathlib, sys, zipfile
+          wheel = next(pathlib.Path("dist").glob("*.whl"))
+          names = zipfile.ZipFile(wheel).namelist()
+          target = "use_computer/skill/SKILL.md"
+          if target not in names:
+              sys.exit(f"{target} is missing from {wheel.name}:\n" + "\n".join(names))
+          print(f"{target} is present in {wheel.name}")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: code/dist/
+
+  publish:
+    name: publish to PyPI
+    needs: build
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      # Trusted Publishing, in preference to a long-lived token.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: code/dist/
+
+      - name: The git tag must match the version in pyproject.toml
+        run: |
+          python - <<'PY'
+          import os, sys, tomllib
+          version = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
+          tag = os.environ["GITHUB_REF_NAME"].lstrip("v")
+          if tag != version:
+              sys.exit(f"tag {tag!r} does not match pyproject version {version!r}")
+          print(f"tag {tag} matches pyproject version {version}")
+          PY
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: code/dist/

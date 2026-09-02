@@ -1,0 +1,418 @@
+"""Configuration: project root discovery, named profiles, and layered resolution.
+
+Adding a backend target is editing a file, not writing code -- so the config file is the
+feature, and `config show` is what makes a misconfiguration debuggable in one command. Every
+resolved value carries the layer it came from, tracked as data during resolution rather than
+reconstructed for display.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+from typing import Any, Literal
+
+from dotenv import dotenv_values
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from use_computer.compare import DEFAULT_THRESHOLD
+from use_computer.coordinates import CoordinateSpace
+from use_computer.errors import ConfigError
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover - exercised on 3.10 only
+    import tomli as tomllib
+
+#: The directory that marks a project root, found by walking up the way git finds its own.
+PROJECT_DIR = ".use-computer"
+CONFIG_FILENAME = "config.toml"
+ENV_FILENAME = ".env"
+
+#: Environment prefix. Declared by :class:`Settings` and reused by the resolver, so the two
+#: cannot drift apart.
+ENV_PREFIX = "USE_COMPUTER_"
+
+#: Layers, highest precedence first. The tuple *is* the precedence rule.
+LAYERS = ("cli", "env", "dotenv", "profile", "config", "global-config", "default")
+Layer = Literal["cli", "env", "dotenv", "profile", "config", "global-config", "default"]
+
+#: Fields whose value is masked wherever configuration is printed.
+SECRET_FIELDS = frozenset({"password"})
+
+
+class BackendProfile(BaseModel):
+    """A named backend target from the config file."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    backend: Literal["local", "vnc"]
+    host: str | None = None
+    port: int = 5900
+    password: str | None = None
+    allow_local: bool = False
+    scale: float | None = Field(
+        default=None,
+        description="Explicit screenshot/actuation ratio. An explicit scale is trusted.",
+    )
+
+
+class Settings(BaseSettings):
+    """The settings model. Declares the environment prefix the resolver scans with."""
+
+    model_config = SettingsConfigDict(env_prefix=ENV_PREFIX, extra="ignore")
+
+    default_profile: str | None = None
+    delay: float = 0.0
+    typing_rate: float = 0.02
+    verify: bool = False
+    verify_threshold: float = DEFAULT_THRESHOLD
+    space: CoordinateSpace = CoordinateSpace.SCREENSHOT
+    dry_run: bool = False
+    allow_local: bool = False
+    continue_on_error: bool = False
+
+
+#: Scalar settings, usable at the top level of the config file and inside a profile.
+SCALAR_FIELDS = tuple(Settings.model_fields)
+
+#: Keys accepted at the top level of a config file.
+TOP_LEVEL_KEYS = frozenset({*SCALAR_FIELDS, "profiles"})
+
+#: Defaults for the fields a profile owns, which are not part of :class:`Settings`.
+PROFILE_DEFAULTS: dict[str, Any] = {"port": 5900}
+
+#: Keys accepted inside a profile. `default_profile` is meaningless there.
+PROFILE_KEYS = frozenset(
+    {*SCALAR_FIELDS, "backend", "host", "port", "password", "scale"} - {"default_profile"}
+)
+
+
+class ResolvedValue(BaseModel):
+    """One setting, with the layer it came from."""
+
+    model_config = ConfigDict(frozen=True)
+
+    value: Any
+    layer: Layer
+    env: str = Field(description="The variable that would override this value.")
+    source: str | None = Field(default=None, description="File the value was read from.")
+    secret: bool = False
+
+    def display(self) -> Any:
+        return "***" if self.secret and self.value is not None else self.value
+
+
+class ResolvedConfig(BaseModel):
+    """Everything a run needs, plus where each value came from."""
+
+    model_config = ConfigDict(frozen=True)
+
+    project_root: Path | None
+    config_file: Path | None
+    global_config_file: Path | None
+    profile_name: str | None
+    values: dict[str, ResolvedValue]
+    warnings: tuple[str, ...] = ()
+
+    def get(self, field: str) -> Any:
+        entry = self.values.get(field)
+        return entry.value if entry else None
+
+    @property
+    def settings(self) -> Settings:
+        """The scalar settings, validated."""
+        return Settings(**{f: self.get(f) for f in SCALAR_FIELDS if self.get(f) is not None})
+
+    @property
+    def profile(self) -> BackendProfile:
+        """The selected profile, with every layer applied on top of it."""
+        if self.profile_name is None:
+            raise ConfigError(
+                "no profile selected: pass --use <profile>, or set `default-profile` in "
+                f"{PROJECT_DIR}/{CONFIG_FILENAME}, or set {ENV_PREFIX}DEFAULT_PROFILE."
+            )
+        backend = self.get("backend")
+        if backend is None:
+            raise ConfigError(
+                f"profile {self.profile_name!r} does not exist or declares no `backend`. "
+                f"Define it in {PROJECT_DIR}/{CONFIG_FILENAME} under "
+                f"[profiles.{self.profile_name}]."
+            )
+        return BackendProfile(
+            name=self.profile_name,
+            backend=backend,
+            host=self.get("host"),
+            port=self.get("port") or PROFILE_DEFAULTS["port"],
+            password=self.get("password"),
+            allow_local=bool(self.get("allow_local")),
+            scale=self.get("scale"),
+        )
+
+    def show(self) -> dict[str, Any]:
+        """The `config show` payload: every value, its layer, its variable, secrets masked."""
+        return {
+            "project-root": str(self.project_root) if self.project_root else None,
+            "config-file": str(self.config_file) if self.config_file else None,
+            "global-config-file": str(self.global_config_file) if self.global_config_file else None,
+            "profile": self.profile_name,
+            "layers": list(LAYERS),
+            "values": {
+                name: {
+                    "value": entry.display(),
+                    "layer": entry.layer,
+                    "env": entry.env,
+                    "source": entry.source,
+                }
+                for name, entry in sorted(self.values.items())
+            },
+        }
+
+
+# --- Locations ---------------------------------------------------------------------------------
+
+
+def find_project_root(start: Path | None = None) -> Path | None:
+    """Walk up from ``start`` looking for a ``.use-computer`` directory, the way git does."""
+    current = (start or Path.cwd()).resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / PROJECT_DIR).is_dir():
+            return candidate
+    return None
+
+
+def xdg_config_dir() -> Path:
+    """The XDG config directory. Configuration is not disposable, so never a cache directory."""
+    base = os.environ.get("XDG_CONFIG_HOME")
+    return (Path(base) if base else Path.home() / ".config") / "use-computer"
+
+
+def xdg_data_dir() -> Path:
+    """The XDG data directory, for anything stored."""
+    base = os.environ.get("XDG_DATA_HOME")
+    return (Path(base) if base else Path.home() / ".local" / "share") / "use-computer"
+
+
+def env_var_for(field: str) -> str:
+    return ENV_PREFIX + field.upper()
+
+
+# --- Reading -----------------------------------------------------------------------------------
+
+
+def _normalise(mapping: dict[str, Any]) -> dict[str, Any]:
+    """Config files are written in kebab-case; fields are snake_case."""
+    return {key.replace("-", "_"): value for key, value in mapping.items()}
+
+
+def _read_toml(path: Path) -> dict[str, Any]:
+    try:
+        with path.open("rb") as handle:
+            loaded: dict[str, Any] = tomllib.load(handle)
+            return loaded
+    except OSError as exc:
+        raise ConfigError(f"cannot read {path}: {exc}") from exc
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"{path} is not valid TOML: {exc}") from exc
+
+
+def _check_unknown(raw: dict[str, Any], path: Path, warnings: list[str]) -> None:
+    """Warn about unknown keys -- including keys inside profiles that are not selected.
+
+    A typo in an unused profile is exactly the kind of thing discovered at the worst moment.
+    """
+    for key in raw:
+        if key.replace("-", "_") not in TOP_LEVEL_KEYS:
+            warnings.append(f"{path}: unknown key {key!r}")
+    profiles = raw.get("profiles") or {}
+    if not isinstance(profiles, dict):
+        warnings.append(f"{path}: `profiles` must be a table")
+        return
+    for profile_name, profile in profiles.items():
+        if not isinstance(profile, dict):
+            warnings.append(f"{path}: profile {profile_name!r} must be a table")
+            continue
+        for key in profile:
+            if key.replace("-", "_") not in PROFILE_KEYS:
+                warnings.append(f"{path}: unknown key {key!r} in profile {profile_name!r}")
+
+
+def _env_layer(environ: dict[str, str]) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """Split ``USE_COMPUTER_*`` into scalar overrides and per-profile overrides.
+
+    ``USE_COMPUTER_PROFILES__STAGING__PASSWORD`` targets one profile; everything else is a
+    scalar override.
+    """
+    scalars: dict[str, Any] = {}
+    profiles: dict[str, dict[str, Any]] = {}
+    for raw_key, raw_value in environ.items():
+        if not raw_key.startswith(ENV_PREFIX):
+            continue
+        name = raw_key[len(ENV_PREFIX) :].lower()
+        if name.startswith("profiles__"):
+            parts = name.split("__")
+            if len(parts) == 3:
+                profiles.setdefault(parts[1], {})[parts[2]] = raw_value
+            continue
+        scalars[name] = raw_value
+    return scalars, profiles
+
+
+# --- Resolution --------------------------------------------------------------------------------
+
+
+def load(
+    cli: dict[str, Any] | None = None,
+    *,
+    profile: str | None = None,
+    start: Path | None = None,
+    environ: dict[str, str] | None = None,
+) -> ResolvedConfig:
+    """Resolve configuration across every layer.
+
+    Precedence, highest to lowest: CLI flags, environment variables, .env files, the selected
+    profile, top-level config keys, the global config, field defaults.
+    """
+    cli_values = {key: value for key, value in (cli or {}).items() if value is not None}
+    environ = dict(os.environ if environ is None else environ)
+    warnings: list[str] = []
+
+    root = find_project_root(start)
+    config_file = root / PROJECT_DIR / CONFIG_FILENAME if root else None
+    if config_file is not None and not config_file.is_file():
+        config_file = None
+    global_file: Path | None = xdg_config_dir() / CONFIG_FILENAME
+    if global_file is not None and not global_file.is_file():
+        global_file = None
+
+    project_raw = _read_toml(config_file) if config_file else {}
+    global_raw = _read_toml(global_file) if global_file else {}
+    if config_file:
+        _check_unknown(project_raw, config_file, warnings)
+    if global_file:
+        _check_unknown(global_raw, global_file, warnings)
+
+    dotenv_raw: dict[str, Any] = {}
+    dotenv_profiles: dict[str, dict[str, Any]] = {}
+    dotenv_file = root / PROJECT_DIR / ENV_FILENAME if root else None
+    if dotenv_file is not None and dotenv_file.is_file():
+        present = {k: v for k, v in dotenv_values(dotenv_file).items() if v is not None}
+        dotenv_raw, dotenv_profiles = _env_layer(present)
+    else:
+        dotenv_file = None
+
+    env_raw, env_profiles = _env_layer(environ)
+
+    # Pass one: the profile name itself, resolved without a profile layer.
+    selected = profile or cli_values.get("profile")
+    if selected is None:
+        for candidate in (
+            env_raw.get("default_profile"),
+            dotenv_raw.get("default_profile"),
+            _normalise(project_raw).get("default_profile"),
+            _normalise(global_raw).get("default_profile"),
+        ):
+            if candidate:
+                selected = str(candidate)
+                break
+
+    # Pass two: every field, over the full stack.
+    profile_raw: dict[str, Any] = {}
+    profile_source: Path | None = None
+    if selected:
+        for raw, source in ((project_raw, config_file), (global_raw, global_file)):
+            entry = (raw.get("profiles") or {}).get(selected)
+            if isinstance(entry, dict):
+                profile_raw = _normalise(entry)
+                profile_source = source
+                break
+        else:
+            warnings.append(f"profile {selected!r} is not defined in any config file")
+        for overrides in (dotenv_profiles.get(selected), env_profiles.get(selected)):
+            if overrides:
+                profile_raw = {**profile_raw, **overrides}
+
+    stack: list[tuple[Layer, dict[str, Any], Path | None]] = [
+        ("cli", {k: v for k, v in cli_values.items() if k != "profile"}, None),
+        ("env", env_raw, None),
+        ("dotenv", dotenv_raw, dotenv_file),
+        ("profile", profile_raw, profile_source),
+        (
+            "config",
+            _normalise({k: v for k, v in project_raw.items() if k != "profiles"}),
+            config_file,
+        ),
+        (
+            "global-config",
+            _normalise({k: v for k, v in global_raw.items() if k != "profiles"}),
+            global_file,
+        ),
+    ]
+
+    fields = (*SCALAR_FIELDS, "backend", "host", "port", "scale", "password")
+    defaults = Settings()
+    values: dict[str, ResolvedValue] = {}
+    for field in fields:
+        for layer, mapping, source in stack:
+            if field in mapping:
+                values[field] = ResolvedValue(
+                    value=_coerce(field, mapping[field]),
+                    layer=layer,
+                    env=env_var_for(field),
+                    source=str(source) if source else None,
+                    secret=field in SECRET_FIELDS,
+                )
+                break
+        else:
+            values[field] = ResolvedValue(
+                value=getattr(defaults, field, PROFILE_DEFAULTS.get(field)),
+                layer="default",
+                env=env_var_for(field),
+                secret=field in SECRET_FIELDS,
+            )
+    if selected:
+        values["default_profile"] = values["default_profile"].model_copy(
+            update={"value": selected}
+        )
+
+    return ResolvedConfig(
+        project_root=root,
+        config_file=config_file,
+        global_config_file=global_file,
+        profile_name=selected,
+        values=values,
+        warnings=tuple(warnings),
+    )
+
+
+_TRUE = {"1", "true", "yes", "on"}
+_FALSE = {"0", "false", "no", "off"}
+_BOOL_FIELDS = frozenset({"verify", "dry_run", "allow_local", "continue_on_error"})
+_FLOAT_FIELDS = frozenset({"delay", "typing_rate", "verify_threshold", "scale"})
+
+
+def _coerce(field: str, value: Any) -> Any:
+    """Environment variables and .env files arrive as strings; TOML arrives already typed."""
+    if not isinstance(value, str):
+        return value
+    lowered = value.strip().lower()
+    if field in _BOOL_FIELDS:
+        if lowered in _TRUE:
+            return True
+        if lowered in _FALSE:
+            return False
+        raise ConfigError(f"{env_var_for(field)}={value!r} is not a boolean")
+    if field in _FLOAT_FIELDS:
+        try:
+            return float(value)
+        except ValueError as exc:
+            raise ConfigError(f"{env_var_for(field)}={value!r} is not a number") from exc
+    if field == "port":
+        try:
+            return int(value)
+        except ValueError as exc:
+            raise ConfigError(f"{env_var_for(field)}={value!r} is not an integer") from exc
+    return value

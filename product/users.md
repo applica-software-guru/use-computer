@@ -1,6 +1,6 @@
 ---
 title: "Users"
-status: new
+status: synced
 author: ""
 last-modified: "2026-09-02T00:00:00.000Z"
 version: "1.0"
