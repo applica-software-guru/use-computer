@@ -5,8 +5,8 @@ from __future__ import annotations
 import io
 
 from PIL import Image, ImageDraw
-from tests.fake_backend import png
 
+from tests.fake_backend import png
 from use_computer.compare import DEFAULT_THRESHOLD, Screenshot, compare
 
 

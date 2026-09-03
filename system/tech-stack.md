@@ -3,7 +3,7 @@ title: "Tech Stack"
 status: synced
 author: ""
 last-modified: "2026-09-03T00:00:00.000Z"
-version: "1.1"
+version: "1.2"
 ---
 
 # Tech Stack
@@ -53,13 +53,29 @@ Backends are optional extras, imported lazily, so the package installs without t
 
 ## CI / Release
 
-A GitHub Actions workflow that:
+Two GitHub Actions workflows, at the repository root because GitHub reads them nowhere else, both
+running in `code/` where the package lives. Action majors are pinned to what is current and the
+pin carries a comment saying so, so the next reader knows it was checked rather than copied.
+
+**`ci.yml`** — every push and pull request. The matrix, lint, type check, tests, and a check that
+the CLI works with **no extras installed**. Nothing is published.
+
+**`publish.yml`** — releases and rehearsals. It runs the same matrix first, because publishing
+untested code is the failure the whole gate exists to prevent, then builds, then uploads:
 
 1. tests a **matrix over both ends of the supported typer range**;
 2. builds;
 3. uploads to PyPI **when a release is published**, gated on the git tag matching the version in
    `pyproject.toml` and on the bundled `SKILL.md` being present in the wheel;
-4. prefers **Trusted Publishing** over a long-lived token.
+4. on **manual dispatch**, uploads to TestPyPI instead, so the whole pipeline can be rehearsed
+   before a version number is spent — PyPI never lets one be reused. With no TestPyPI token
+   configured the run still builds and checks the artifacts, and says why it skipped the upload;
+5. prefers **Trusted Publishing** over a long-lived token, with `id-token: write` for PEP 740
+   attestations.
+
+`ruff` runs with a **cold cache** in CI. A stale cache once reported a clean tree while a real
+lint error sat in the file it had already seen; CI is always a machine that has never linted the
+file, so it is the one that finds out.
 
 ## Conventions that cost real debugging in ui-locator
 

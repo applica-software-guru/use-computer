@@ -1,0 +1,166 @@
+name: publish
+
+# Publishes to PyPI when a GitHub release is published, so the release notes and
+# the uploaded version are always the same event. Can also be run by hand
+# against TestPyPI to rehearse the whole pipeline -- PyPI never lets a version
+# be reused, so a mistake found at release time costs a version number.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Index to upload to
+        type: choice
+        default: testpypi
+        options: [testpypi, pypi]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: code
+
+env:
+  TERM: dumb
+  COLUMNS: "200"
+  NO_COLOR: "1"
+
+jobs:
+  # Publishing untested code is the failure this whole gate exists to prevent,
+  # so the matrix runs again here rather than trusting a green run elsewhere.
+  test:
+    name: test (py${{ matrix.python }}, ${{ matrix.typer }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.10"
+            typer: "typer==0.16.0"
+          - python: "3.12"
+            typer: "typer"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install the project
+        run: |
+          uv sync --extra dev --extra local --extra vnc
+          uv pip install '${{ matrix.typer }}'
+
+      - name: Lint
+        run: uv run --no-sync ruff check --no-cache .
+
+      - name: Type-check
+        run: uv run --no-sync mypy
+
+      - name: Test
+        run: uv run --no-sync pytest -q
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+
+      # A tag that disagrees with pyproject.toml would publish a version nobody
+      # asked for, and PyPI never lets a version be reused.
+      - name: Check the tag matches the project version
+        if: github.event_name == 'release'
+        # uv's python, not the runner image's: tomllib needs 3.11+, and a
+        # version read that quietly returns nothing would compare against an
+        # empty string rather than failing.
+        run: |
+          set -euo pipefail
+          version=$(uv run --no-project --python 3.12 python -c "import tomllib,pathlib;print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          tag="${GITHUB_REF_NAME#v}"
+          echo "pyproject: $version — tag: $tag"
+          if [ -z "$version" ]; then
+            echo "::error::could not read the version from pyproject.toml"
+            exit 1
+          fi
+          if [ "$version" != "$tag" ]; then
+            echo "::error::tag '$GITHUB_REF_NAME' does not match version '$version' in pyproject.toml"
+            exit 1
+          fi
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      # The skill is package data. If it ever falls out of the wheel,
+      # `use-computer skill install` silently has nothing to install, and
+      # nobody who installed from PyPI would have the instructions at all.
+      - name: Check the bundled skill is in the wheel
+        run: |
+          uv run --no-project --python 3.12 python - <<'PY'
+          import glob, sys, zipfile
+          wheel = glob.glob("dist/*.whl")[0]
+          names = zipfile.ZipFile(wheel).namelist()
+          if "use_computer/skill/SKILL.md" not in names:
+              sys.exit(f"SKILL.md missing from {wheel}")
+          print(f"ok: SKILL.md present in {wheel}")
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: code/dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    # This job never checks the repository out -- it only moves artifacts -- so
+    # the workflow-level working-directory of code/ would not exist here.
+    defaults:
+      run:
+        working-directory: .
+    environment:
+      name: ${{ github.event_name == 'release' && 'pypi' || inputs.target }}
+    permissions:
+      id-token: write # PEP 740 attestations (and Trusted Publishing, see below)
+    env:
+      HAS_TEST_TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN != '' }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to TestPyPI
+        if: >-
+          github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+          && env.HAS_TEST_TOKEN == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+
+      - name: Note a skipped TestPyPI upload
+        if: >-
+          github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+          && env.HAS_TEST_TOKEN != 'true'
+        run: |
+          echo "::notice::Built and checked the artifacts; TestPyPI upload"\
+            " skipped because TEST_PYPI_API_TOKEN is not set."
+
+      - name: Publish to PyPI
+        if: github.event_name == 'release' || inputs.target == 'pypi'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Prefer Trusted Publishing: configure a publisher for this repository
+          # and this workflow at
+          # https://pypi.org/manage/project/use-computer-cli/settings/publishing/
+          # then delete the line below -- GitHub mints a short-lived OIDC token
+          # per run and there is no long-lived secret to leak or rotate.
+          password: ${{ secrets.PYPI_API_TOKEN }}
