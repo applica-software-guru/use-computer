@@ -5,7 +5,10 @@
 .sdd/config.yaml
 
 # --- local project config (use-computer's own .use-computer/) --------------
-.use-computer/.env
+# This is a scratch config for driving the tool during development, not part of
+# the project. It carries allow-local, which is a per-machine opt-in and must
+# never arrive pre-enabled for whoever clones this.
+.use-computer/
 .env
 .env.*
 !.env.example
