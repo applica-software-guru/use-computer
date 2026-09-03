@@ -2,8 +2,8 @@
 title: "Interfaces"
 status: synced
 author: ""
-last-modified: "2026-09-02T00:00:00.000Z"
-version: "1.0"
+last-modified: "2026-09-03T00:00:00.000Z"
+version: "1.1"
 ---
 
 # Interfaces
@@ -31,6 +31,9 @@ use-computer screenshot  [--out PATH] [--base64]
 
 ```
 use-computer batch  (PATH | -)  [--continue-on-error]
+use-computer config init [--backend local|vnc] [--profile NAME]
+                         [--host HOST] [--port PORT] [--allow-local]
+                         [--dir PATH] [--no-probe] [--force]
 use-computer config show
 use-computer skill  install|update|remove|status
                     [--scope user|project|agents|claude] [--dir PATH] [--force]
@@ -85,6 +88,32 @@ A JSON array of action objects, discriminated on `action`:
   {"action": "key", "combo": "enter"}
 ]
 ```
+
+### `config init` JSON
+
+```json
+{
+  "action": "init",
+  "config-file": "/work/.use-computer/config.toml",
+  "env-file": null,
+  "profile": "staging",
+  "backend": "vnc",
+  "probe": {
+    "ok": true,
+    "screen": {
+      "width": 1280, "height": 800,
+      "screenshot_width": 1280, "screenshot_height": 800,
+      "scale": 1.0
+    },
+    "error": null
+  }
+}
+```
+
+`env-file` is the path a password was written to, or `null`. `probe` is `null` when `--no-probe`
+was given. Exit `0` when the config was written and the probe succeeded or was skipped, `1` when
+the probe failed — the file is still on disk, so it can be corrected by hand — and `2` on bad
+usage.
 
 ## Backend Protocol
 

@@ -49,7 +49,18 @@ stdout is one JSON object per run; every diagnostic goes to stderr. Exit codes: 
 
 ## Configure
 
-`.use-computer/config.toml` at the project root (found by walking up, the way git finds its own):
+```bash
+use-computer config init                                  # asks, then proves it works
+use-computer config init --backend vnc --host 10.0.0.5    # doesn't ask
+use-computer config init --backend local --allow-local
+```
+
+`config init` writes the file below, then opens the backend it just configured and reports the
+screen geometry and scale — so a coordinate space whose ratio cannot be derived surfaces at setup
+rather than at the first click that lands in the wrong place.
+
+It writes `.use-computer/config.toml` at the project root (found by walking up, the way git finds
+its own):
 
 ```toml
 default-profile = "laptop"

@@ -2,8 +2,8 @@
 title: "CLI"
 status: synced
 author: ""
-last-modified: "2026-09-02T00:00:00.000Z"
-version: "1.0"
+last-modified: "2026-09-03T00:00:00.000Z"
+version: "1.1"
 ---
 
 # CLI
@@ -20,6 +20,7 @@ use-computer type --text "hello" --use staging
 use-computer key ctrl+s --use staging
 use-computer screenshot --use laptop
 use-computer batch actions.json --use staging
+use-computer config init
 use-computer config show
 use-computer skill install --scope project
 ```

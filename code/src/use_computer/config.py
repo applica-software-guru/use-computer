@@ -9,6 +9,7 @@ reconstructed for display.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Literal
@@ -386,6 +387,119 @@ def load(
         values=values,
         warnings=tuple(warnings),
     )
+
+
+# --- Writing ---------------------------------------------------------------------------------
+
+
+def _toml_string(value: str) -> str:
+    """TOML basic string. Values here are hosts and profile names, but never assume."""
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+_BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _toml_key(value: str) -> str:
+    """A TOML key. Bare when it can be, quoted when it must be.
+
+    The table header is a key, not a value: interpolating a name with a quote or a dot into
+    `[profiles.<name>]` produces a file the loader then refuses to read.
+    """
+    return value if _BARE_KEY.match(value) else _toml_string(value)
+
+
+def render_config(
+    profile: str,
+    backend: str,
+    *,
+    host: str | None = None,
+    port: int = 5900,
+    allow_local: bool = False,
+) -> str:
+    """The config file a guided setup writes.
+
+    Commented, because the file is the thing the user edits next.
+    """
+    lines = [
+        "# Written by `use-computer config init`. Edit it freely.",
+        "#",
+        "# This file is discovered by walking up from the current directory, the way git finds",
+        "# its own, and is meant to be committed. Secrets belong in .use-computer/.env, which",
+        "# is not. `use-computer config show` prints every resolved value and where it came from.",
+        "",
+        f"default-profile = {_toml_string(profile)}",
+        "",
+        "# Seconds to wait after each action, so the application can react.",
+        "delay = 0.1",
+        "",
+        f"[profiles.{_toml_key(profile)}]",
+        f"backend = {_toml_string(backend)}",
+    ]
+    if backend == "vnc":
+        lines += [
+            f"host = {_toml_string(host or '')}",
+            f"port = {port}",
+            "# The password belongs in .use-computer/.env, not here:",
+            f"#   {profile_env_var(profile, 'password')}=...",
+        ]
+    if backend == "local":
+        lines += [
+            "# The local backend moves THIS machine's pointer and types on THIS machine's",
+            "# keyboard. That is why it is off by default; this line is the explicit opt-in.",
+            f"allow-local = {str(bool(allow_local)).lower()}",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def profile_env_var(profile: str, field: str) -> str:
+    """The variable that overrides one field of one profile."""
+    return f"{ENV_PREFIX}PROFILES__{profile.upper()}__{field.upper()}"
+
+
+def write_initial_config(
+    root: Path,
+    profile: str,
+    backend: str,
+    *,
+    host: str | None = None,
+    port: int = 5900,
+    allow_local: bool = False,
+    password: str | None = None,
+    force: bool = False,
+) -> tuple[Path, Path | None]:
+    """Create ``.use-computer/config.toml`` under ``root``, and a ``.env`` if given a password.
+
+    Returns the config path and the .env path, the latter ``None`` when no password was given.
+
+    Raises:
+        ConfigError: when a config is already there and ``force`` was not given.
+    """
+    directory = root / PROJECT_DIR
+    config_path = directory / CONFIG_FILENAME
+    if config_path.exists() and not force:
+        raise ConfigError(
+            f"{config_path} already exists. Edit it, or pass --force to replace it. "
+            "`config init` creates a config; it does not merge into one."
+        )
+    directory.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        render_config(profile, backend, host=host, port=port, allow_local=allow_local),
+        encoding="utf-8",
+    )
+
+    env_path: Path | None = None
+    if password:
+        env_path = directory / ENV_FILENAME
+        line = f"{profile_env_var(profile, 'password')}={password}\n"
+        existing = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+        if existing and not existing.endswith("\n"):
+            existing += "\n"
+        env_path.write_text(existing + line, encoding="utf-8")
+        # The file holds a secret from the moment it is written.
+        env_path.chmod(0o600)
+    return config_path, env_path
 
 
 _TRUE = {"1", "true", "yes", "on"}

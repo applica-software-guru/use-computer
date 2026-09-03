@@ -2,8 +2,8 @@
 title: "Safety"
 status: synced
 author: ""
-last-modified: "2026-09-02T00:00:00.000Z"
-version: "1.0"
+last-modified: "2026-09-03T00:00:00.000Z"
+version: "1.1"
 ---
 
 # Safety
@@ -28,6 +28,10 @@ agent can rehearse a whole batch and inspect exactly what would happen.
 The `local` backend controls the user's own machine. It refuses to act unless it has been enabled
 explicitly — a setting in the profile or an environment variable, never a silent default. A local
 profile without the opt-in fails with an error explaining exactly what to set.
+
+`config init` asks for that opt-in **out loud** rather than writing it into a file on the user's
+behalf, and declining aborts the setup instead of producing a profile that cannot run. An opt-in
+nobody was asked for is not an opt-in.
 
 ## Permission errors
 

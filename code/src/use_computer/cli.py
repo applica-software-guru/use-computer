@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Sequence
+from enum import Enum
 from pathlib import Path
 from typing import Annotated, Any, NoReturn
 
@@ -36,7 +37,7 @@ from use_computer.actions import (
     ScrollDirection,
     TypeAction,
 )
-from use_computer.config import ResolvedConfig
+from use_computer.config import ResolvedConfig, profile_env_var, write_initial_config
 from use_computer.config import load as load_config
 from use_computer.coordinates import CoordinateSpace
 from use_computer.errors import UseComputerError
@@ -46,6 +47,14 @@ from use_computer.skill import install as skill_install
 from use_computer.skill import remove as skill_remove
 from use_computer.skill import status as skill_status
 from use_computer.skill import update as skill_update
+
+
+class BackendKind(str, Enum):
+    """The backends `config init` can write a profile for."""
+
+    LOCAL = "local"
+    VNC = "vnc"
+
 
 EXIT_OK = 0
 EXIT_FAILURE = 1
@@ -366,6 +375,191 @@ def _read_file(source: str) -> str:
 
 
 # --- config ------------------------------------------------------------------------------------
+
+
+@config_app.command("init")
+def config_init(
+    backend: Annotated[
+        BackendKind | None,
+        typer.Option("--backend", help="Backend to configure. Given, nothing is asked."),
+    ] = None,
+    profile: Annotated[
+        str | None, typer.Option("--profile", help="Profile name. Defaults to the backend name.")
+    ] = None,
+    host: Annotated[str | None, typer.Option("--host", help="VNC host.")] = None,
+    port: Annotated[int, typer.Option("--port", help="VNC port.")] = 5900,
+    allow_local: Annotated[
+        bool, typer.Option("--allow-local", help="Opt in to driving this machine.")
+    ] = False,
+    dir: DirOption = None,
+    no_probe: Annotated[
+        bool, typer.Option("--no-probe", help="Skip opening the backend afterwards.")
+    ] = False,
+    force: Annotated[bool, typer.Option("--force", help="Replace an existing config.")] = False,
+) -> None:
+    """Write a config, then prove it works."""
+    root = dir or Path.cwd()
+    interactive = backend is None and _stdin_is_a_tty()
+
+    if interactive:
+        kind, profile_name, host, port, allow_local, password = _ask(profile, port)
+    else:
+        if backend is None:
+            _err.print(
+                "[red]error:[/red] no backend given and stdin is not a terminal. Pass "
+                "--backend local|vnc (and --host for vnc, or --allow-local for local)."
+            )
+            raise typer.Exit(EXIT_USAGE)
+        kind = backend
+        profile_name = profile or kind.value
+        password = None
+        if kind is BackendKind.VNC and not host:
+            _err.print("[red]error:[/red] --backend vnc needs --host.")
+            raise typer.Exit(EXIT_USAGE)
+        if kind is BackendKind.LOCAL and not allow_local:
+            _err.print(
+                "[red]error:[/red] the local backend moves this machine's pointer and types on "
+                "its keyboard. Pass --allow-local to opt in."
+            )
+            raise typer.Exit(EXIT_USAGE)
+
+    try:
+        config_path, env_path = write_initial_config(
+            root,
+            profile_name,
+            kind.value,
+            host=host,
+            port=port,
+            allow_local=allow_local,
+            password=password,
+            force=force,
+        )
+    except UseComputerError as exc:
+        _fail(exc)
+
+    payload: dict[str, Any] = {
+        "action": "init",
+        "config-file": str(config_path),
+        "env-file": str(env_path) if env_path else None,
+        "profile": profile_name,
+        "backend": kind.value,
+        "probe": None,
+    }
+
+    if no_probe:
+        _emit(payload)
+        _report_next_steps(kind, profile_name, env_path is None)
+        raise typer.Exit(EXIT_OK)
+
+    probe = _probe(root, profile_name)
+    payload["probe"] = probe
+    _emit(payload)
+    if not probe["ok"]:
+        _err.print(f"[red]probe failed:[/red] {probe['error']}")
+        _err.print(f"[dim]{config_path} was written; correct it and try again.[/dim]")
+        raise typer.Exit(EXIT_FAILURE)
+    _report_next_steps(kind, profile_name, env_path is None)
+    raise typer.Exit(EXIT_OK)
+
+
+def _ask(
+    profile: str | None, port: int
+) -> tuple[BackendKind, str, str | None, int, bool, str | None]:
+    """The guided half. Every question goes to stderr; stdout stays JSON."""
+    _err.print("[bold]use-computer setup[/bold]")
+    kind = _prompt_backend()
+    host: str | None = None
+    password: str | None = None
+    allow_local = False
+
+    if kind is BackendKind.VNC:
+        host = typer.prompt("VNC host", err=True)
+        port = int(typer.prompt("VNC port", default=port, err=True))
+        password = (
+            typer.prompt(
+                "VNC password (leave empty for none; it is written to .use-computer/.env)",
+                default="",
+                hide_input=True,
+                show_default=False,
+                err=True,
+            )
+            or None
+        )
+    else:
+        # Asked out loud. An opt-in nobody was asked for is not an opt-in.
+        _err.print(
+            "[yellow]The local backend moves this machine's pointer and types on its "
+            "keyboard.[/yellow]"
+        )
+        allow_local = typer.confirm("Enable it?", default=False, err=True)
+        if not allow_local:
+            _err.print("[dim]Aborted: a local profile without the opt-in cannot run.[/dim]")
+            raise typer.Exit(EXIT_OK)
+
+    name = profile or typer.prompt("Profile name", default=kind.value, err=True)
+    return kind, name, host, port, allow_local, password
+
+
+def _stdin_is_a_tty() -> bool:
+    """Whether there is a human to ask. Indirect so it can be exercised in tests."""
+    return sys.stdin.isatty()
+
+
+def _prompt_backend() -> BackendKind:
+    """Ask until the answer is one of the backends.
+
+    Validated here rather than with click's Choice: click is typer's dependency, not ours, and
+    importing someone else's transitive dependency is how it breaks when they drop it.
+    """
+    choices = [kind.value for kind in BackendKind]
+    while True:
+        answer = typer.prompt(
+            "Backend: local drives this machine, vnc drives a remote framebuffer",
+            default=BackendKind.LOCAL.value,
+            err=True,
+        ).strip().lower()
+        if answer in choices:
+            return BackendKind(answer)
+        _err.print(f"[red]{answer!r} is not a backend.[/red] Choose one of: {', '.join(choices)}")
+
+
+def _probe(root: Path, profile: str) -> dict[str, Any]:
+    """Open the backend just configured and report what it sees.
+
+    A scale that cannot be derived is the most expensive failure this tool has, so setup is
+    where it should surface -- not the first click.
+    """
+    try:
+        resolved = load_config(profile=profile, start=root)
+        session = Session.from_profile(config=resolved)
+    except Exception as exc:
+        return {"ok": False, "screen": None, "error": f"{type(exc).__name__}: {exc}"}
+    try:
+        screen = session.screen
+    except Exception as exc:
+        return {"ok": False, "screen": None, "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        session.close()
+    if screen.scale is None:
+        return {
+            "ok": False,
+            "screen": screen.model_dump(mode="json"),
+            "error": (
+                f"the backend reports {screen.width}x{screen.height} actuation units and "
+                f"{screen.screenshot_width}x{screen.screenshot_height} screenshot pixels, from "
+                "which no consistent scale can be derived. Set `scale` explicitly in the profile."
+            ),
+        }
+    return {"ok": True, "screen": screen.model_dump(mode="json"), "error": None}
+
+
+def _report_next_steps(kind: BackendKind, profile: str, needs_password: bool) -> None:
+    if kind is BackendKind.VNC and needs_password:
+        _err.print(
+            f"[dim]If the server needs a password, set "
+            f"{profile_env_var(profile, 'password')} or put it in .use-computer/.env[/dim]"
+        )
+    _err.print(f"[green]ready[/green] try: use-computer screenshot --use {profile}")
 
 
 @config_app.command("show")

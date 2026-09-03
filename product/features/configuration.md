@@ -2,8 +2,8 @@
 title: "Configuration"
 status: synced
 author: ""
-last-modified: "2026-09-02T00:00:00.000Z"
-version: "1.0"
+last-modified: "2026-09-03T00:00:00.000Z"
+version: "1.1"
 ---
 
 # Configuration
@@ -22,6 +22,38 @@ own**: the first ancestor containing a `.use-computer` directory wins. That dire
 When no project root is found, XDG fallbacks apply: the XDG **config** directory for
 `config.toml` and the XDG **data** directory for anything stored. Never a cache directory —
 configuration is not disposable.
+
+## Creating one: `config init`
+
+The only way to get a config should not be to already know how to write one.
+
+```bash
+use-computer config init                                       # asks
+use-computer config init --backend vnc --host 10.0.0.5         # doesn't
+use-computer config init --backend local --allow-local
+```
+
+**Interactive**, when stdin is a TTY. The questions go to stderr, so the output contract is
+untouched: which backend; for `vnc` the host and port, then optionally a password entered hidden;
+for `local` the opt-in **asked out loud**, because that backend moves this machine's pointer, and
+declining aborts rather than writing a profile that cannot run; finally the profile name,
+defaulting to the backend name.
+
+**Non-interactive**, from flags, so an agent can do it and so it scripts. Flags win over
+prompting: given `--backend`, nothing is asked. Missing required information — `vnc` with no host,
+`local` without `--allow-local` — is a usage error, not a prompt on a pipe. There is deliberately
+no `--password` flag, because a password on a command line lands in shell history; interactive
+setup prompts for it, and otherwise the command reports the environment variable to set.
+
+**Then it probes.** After writing, `init` opens the backend it just configured, asks for the
+screen, and reports the geometry and the scale. A scale that cannot be derived is the most
+expensive failure this tool has — every click lands in the wrong place and nothing about it looks
+like a scaling bug — so setup is where it should surface, not the first click. `--no-probe` skips
+it.
+
+It refuses to overwrite an existing config without `--force`, and `--dir` chooses where
+`.use-computer` is created. Adding a profile to an existing config is a manual edit: `init`
+creates a config, it does not merge into one.
 
 ## Named profiles
 

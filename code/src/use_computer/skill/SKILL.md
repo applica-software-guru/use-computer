@@ -106,3 +106,13 @@ are unsure about.
 
 `use-computer config show` prints every resolved value, the layer it came from, and the exact
 environment variable that would override it. Run it first when a profile behaves unexpectedly.
+
+If there is no config at all, you can create one without a human:
+
+```bash
+use-computer config init --backend vnc --host 10.0.0.5 --profile staging
+```
+
+It refuses to overwrite an existing config, and it will not enable the local backend for you —
+that opt-in is the user's to give. After writing, it opens the backend and reports the screen and
+its scale; a failed probe means the config is on disk but wrong.
