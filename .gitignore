@@ -37,6 +37,10 @@ htmlcov/
 # --- Node (sdd is an npm CLI) ---------------------------------------------
 node_modules/
 
+# --- Screenshots captured while driving the tool by hand -------------------
+*.png
+!product/**/*.png
+
 # --- Editor / OS -----------------------------------------------------------
 .DS_Store
 .vscode/
