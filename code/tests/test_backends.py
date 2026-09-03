@@ -23,7 +23,7 @@ def test_a_missing_extra_names_what_to_install() -> None:
     with pytest.raises(BackendNotAvailableError) as excinfo:
         require("no_such_module_at_all", backend="vnc", extra="vnc")
     message = str(excinfo.value)
-    assert 'use-computer[vnc]' in message
+    assert 'use-computer-cli[vnc]' in message
 
 
 def test_the_local_backend_refuses_without_an_explicit_opt_in() -> None:

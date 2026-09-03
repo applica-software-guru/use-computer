@@ -38,12 +38,18 @@ from use_computer.errors import (
 from use_computer.keys import KeyCombo, parse_combo
 from use_computer.runner import ActionResult, ErrorInfo, RunResult, Session, run_actions
 
+#: The distribution name on PyPI, which differs from the import package: `use-computer` was
+#: already taken there. importlib.metadata is keyed by the distribution, so this is the name
+#: that must appear here.
+DISTRIBUTION = "use-computer-cli"
+
 try:
-    __version__ = version("use-computer")
+    __version__ = version(DISTRIBUTION)
 except PackageNotFoundError:  # pragma: no cover - source checkout without an install
     __version__ = "0.0.0"
 
 __all__ = [
+    "DISTRIBUTION",
     "Action",
     "ActionFailedError",
     "ActionResult",

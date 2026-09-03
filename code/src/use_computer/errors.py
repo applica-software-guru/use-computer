@@ -20,7 +20,7 @@ class BackendNotAvailableError(UseComputerError):
         self.missing = missing
         super().__init__(
             f"backend {backend!r} needs {missing!r}, which is not installed. "
-            f'Install it with: pip install "use-computer[{extra}]"'
+            f'Install it with: pip install "use-computer-cli[{extra}]"'
         )
 
 

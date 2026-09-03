@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import json
+import sys
+from importlib import metadata
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner, Result
 
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
+
+import use_computer
 from tests.conftest import WriteConfig, strip_ansi
 from tests.fake_backend import FakeBackend
 from use_computer import cli
@@ -221,3 +229,15 @@ def test_the_command_list_matches_the_registered_commands() -> None:
 @pytest.mark.parametrize("command", sorted(cli._COMMANDS))
 def test_a_known_command_is_never_rewritten(command: str) -> None:
     assert apply_default_command(["use-computer", command]) == ["use-computer", command]
+
+
+def test_the_version_is_read_from_the_distribution_that_is_actually_published() -> None:
+    """importlib.metadata is keyed by the distribution name, not the import package.
+
+    They differ here, so a rename that misses one of them silently reports 0.0.0.
+    """
+    pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    declared = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["name"]
+    assert declared == use_computer.DISTRIBUTION
+    assert use_computer.__version__ == metadata.version(declared)
+    assert use_computer.__version__ != "0.0.0"

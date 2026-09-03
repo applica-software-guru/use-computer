@@ -2,8 +2,8 @@
 title: "Backends"
 status: synced
 author: ""
-last-modified: "2026-09-02T00:00:00.000Z"
-version: "1.0"
+last-modified: "2026-09-03T00:00:00.000Z"
+version: "1.1"
 ---
 
 # Backends
@@ -39,13 +39,19 @@ Every backend implements a runtime-checkable `Protocol` covering `screenshot`, `
 Backends are **optional extras, imported lazily**, so the package installs without them:
 
 ```bash
-pip install use-computer            # no backend
-pip install "use-computer[local]"   # pynput + mss
-pip install "use-computer[vnc]"     # vncdotool
+pip install use-computer-cli            # no backend
+pip install "use-computer-cli[local]"   # pynput + mss
+pip install "use-computer-cli[vnc]"     # vncdotool
 ```
 
+The distribution is named `use-computer-cli` because `use-computer` is taken on PyPI by an
+unrelated project. The command it installs, and the package it imports, stay `use-computer` and
+`use_computer` — a distribution name that differs from its command is normal, and renaming the
+rest would buy nothing.
+
 Constructing a backend whose dependency is missing raises `BackendNotAvailableError`, whose message
-names the exact extra to install.
+names the exact extra to install. That message is what a stuck agent reads, so it must name the
+**distribution** — `pip install "use-computer-cli[vnc]"` — not the import package.
 
 ## Named profiles
 

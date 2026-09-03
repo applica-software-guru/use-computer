@@ -2,8 +2,8 @@
 title: "Users"
 status: synced
 author: ""
-last-modified: "2026-09-02T00:00:00.000Z"
-version: "1.0"
+last-modified: "2026-09-03T00:00:00.000Z"
+version: "1.1"
 ---
 
 # Users
@@ -36,7 +36,7 @@ What they need:
 
 - A Python API underneath the CLI, with typed, frozen result models.
 - Installation without unwanted OS-level dependencies: backends are optional extras, imported
-  lazily, so `pip install use-computer` works anywhere.
+  lazily, so `pip install use-computer-cli` works anywhere.
 - A named-profile config so switching from a local display to a VNC host is a flag, not a rewrite.
 - `config show` to see every resolved value and the layer it came from when something is wrong.
 - Dry-run to rehearse a batch before it touches a real screen.

@@ -2,13 +2,19 @@
 title: "Tech Stack"
 status: synced
 author: ""
-last-modified: "2026-09-02T00:00:00.000Z"
-version: "1.0"
+last-modified: "2026-09-03T00:00:00.000Z"
+version: "1.1"
 ---
 
 # Tech Stack
 
 Mirrors ui-locator. Every pin below exists because of something that broke.
+
+## Distribution
+
+Published to PyPI as **`use-computer-cli`** — `use-computer` is taken there by an unrelated
+project. The console script stays `use-computer` and the import package stays `use_computer`.
+Anything that tells a user what to install names the distribution.
 
 ## Runtime
 

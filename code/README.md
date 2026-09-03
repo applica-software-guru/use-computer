@@ -11,12 +11,15 @@ diagnostics on stderr, with a Python API underneath.
 ## Install
 
 ```bash
-pip install use-computer            # no backend
-pip install "use-computer[local]"   # drive this machine's display (pynput + mss)
-pip install "use-computer[vnc]"     # drive a remote framebuffer over RFB (vncdotool)
+pip install use-computer-cli            # no backend
+pip install "use-computer-cli[local]"   # drive this machine's display (pynput + mss)
+pip install "use-computer-cli[vnc]"     # drive a remote framebuffer over RFB (vncdotool)
 ```
 
 Backends are optional extras, imported lazily, so the package installs without them.
+
+The distribution is `use-computer-cli` because `use-computer` is taken on PyPI by an unrelated
+project. The command it installs is `use-computer`, and the package it imports is `use_computer`.
 
 ## Use
 
