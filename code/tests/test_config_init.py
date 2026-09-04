@@ -7,9 +7,9 @@ import sys
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner, Result
+from typer.testing import CliRunner
 
-from tests.conftest import strip_ansi
+from tests.conftest import CliResult, strip_ansi
 from tests.fake_backend import FakeBackend
 from use_computer.cli import EXIT_FAILURE, EXIT_OK, EXIT_USAGE, app
 from use_computer.config import (
@@ -24,7 +24,7 @@ from use_computer.config import (
 from use_computer.errors import ConfigError
 
 
-def invoke(*args: str, stdin_is_a_tty: bool = False) -> Result:
+def invoke(*args: str, stdin_is_a_tty: bool = False) -> CliResult:
     return CliRunner().invoke(app, list(args), catch_exceptions=False)
 
 

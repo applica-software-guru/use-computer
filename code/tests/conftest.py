@@ -64,6 +64,23 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
+class CliResult(Protocol):
+    """What a CliRunner result gives us.
+
+    typer.testing re-exports click's Result without declaring it, so importing the name fails
+    under mypy strict on the supported typer floor -- and importing it from click directly would
+    mean depending on somebody else's transitive dependency. Structural typing needs neither.
+    """
+
+    exit_code: int
+
+    @property
+    def stdout(self) -> str: ...
+
+    @property
+    def stderr(self) -> str: ...
+
+
 class WriteConfig(Protocol):
     """Writes a config.toml into the project fixture's root."""
 

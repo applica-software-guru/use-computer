@@ -8,7 +8,7 @@ from importlib import metadata
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner, Result
+from typer.testing import CliRunner
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -16,7 +16,7 @@ else:
     import tomli as tomllib
 
 import use_computer
-from tests.conftest import WriteConfig, strip_ansi
+from tests.conftest import CliResult, WriteConfig, strip_ansi
 from tests.fake_backend import FakeBackend
 from use_computer import cli
 from use_computer.cli import EXIT_FAILURE, EXIT_OK, EXIT_USAGE, app, apply_default_command
@@ -43,7 +43,7 @@ def runner() -> CliRunner:
     return CliRunner()
 
 
-def invoke(runner: CliRunner, *args: str) -> Result:
+def invoke(runner: CliRunner, *args: str) -> CliResult:
     return runner.invoke(app, list(args), catch_exceptions=False)
 
 
