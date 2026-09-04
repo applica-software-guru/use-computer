@@ -2,8 +2,8 @@
 title: "Architecture"
 status: synced
 author: ""
-last-modified: "2026-09-02T00:00:00.000Z"
-version: "1.0"
+last-modified: "2026-09-05T00:00:00.000Z"
+version: "1.1"
 ---
 
 # Architecture
@@ -21,15 +21,40 @@ coordinates.py    pure conversion between coordinate spaces
 keys.py           canonical key syntax → per-backend tables
 compare.py        before/after screenshot comparison (pillow)
 config.py         project-root discovery, layered settings, config show
+tree.py           pure: UINode, Box, TreeScope, TreeResult, NodeSelector, Via
+selectors.py      pure: match a NodeSelector against a tree, prune, budget
 backends/
   base.py         the Protocol + BackendNotAvailableError
   local.py        pynput + mss          (extra: local)
   vnc.py          vncdotool             (extra: vnc)
+accessibility/
+  base.py         AccessibilityProvider Protocol + UITreeUnavailableError
+  roles.py        per-platform role, state and action names → canonical ones
+  atspi.py        Linux   — AT-SPI 2    (extra: tree)
+  uia.py          Windows — UI Automation
+  ax.py           macOS   — AXUIElement
 skill/SKILL.md    package data, shipped in the wheel
 ```
 
-Dependencies point downward only. `coordinates`, `keys` and `compare` are pure and are the easiest
-things in the codebase to test.
+Dependencies point downward only. `coordinates`, `keys`, `compare`, `tree`, `selectors` and
+`accessibility/roles.py` are pure and are the easiest things in the codebase to test — `tree`
+holds the models, `selectors` the policy over them, and neither imports a platform binding.
+
+## The accessibility provider
+
+A second runtime-checkable `Protocol`, separate from `Backend` because the split is different: the
+`local` backend has three platform implementations of it and the `vnc` backend can have none at
+all. It is selected by the **running platform**, never by configuration.
+
+`roles.py` normalises each platform's vocabulary the way `keys.py` normalises key names — AT-SPI's
+`push button`, UIA's `Button` and AX's `AXButton` all become `button`, and the canonical action
+names map back onto `Action.do_action`, control patterns and `AXPress` respectively.
+
+Pruning, the node budget and selector matching live in `selectors.py` and operate on an already
+built tree, so they are pure functions over `UINode` and test without a desktop. That matters: no
+CI runner has a session bus, a logged-in desktop or an Accessibility grant, so the platform
+providers are unreachable there by construction and everything worth testing has to sit above
+them.
 
 ## The backend Protocol
 
@@ -56,8 +81,11 @@ Unknown keys — including keys inside unselected profiles — produce warnings 
 ## Execution flow
 
 1. CLI parses flags and the action(s), resolves the profile.
-2. Runner constructs the backend **once** and queries its `ScreenInfo`.
-3. For each action: convert coordinates into actuation units (refuse if the scale is unknown),
+2. Runner constructs the backend **once** and queries its `ScreenInfo`. The accessibility provider
+   is constructed **lazily**, on the first action that needs it, so a run of pure coordinate
+   actions never touches it.
+3. For each action: if it carries a selector, snapshot the tree and resolve it **now** — one match
+   or an error — then convert coordinates into actuation units (refuse if the scale is unknown),
    normalise keys, optionally capture the before-screenshot, perform (unless dry-run), apply the
    delay, optionally capture the after-screenshot and compare.
 4. Backend is closed, including on failure. A `RunResult` is serialised to stdout.
@@ -83,4 +111,10 @@ present in the built wheel.
 
 - Never import a transitive dependency without declaring it. In ui-locator an undeclared `click`
   import survived unnoticed until typer dropped click.
+- The platform binding is imported **inside the provider's constructor**, never at module import —
+  the same rule as the backends, with the same consequence if broken: `use-computer --help` stops
+  working on a machine without the extra.
+- Selector resolution happens once per action, against a freshly read tree. Never cache a tree
+  between actions to save a read: the layout moved, and that is the whole reason ids are
+  fingerprint-checked.
 - Declare a dependency floor that is actually tested, and verify it in CI.

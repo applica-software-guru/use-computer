@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, TypeAdapter, field_validator
+from pydantic import BaseModel, Field, TypeAdapter, field_validator, model_validator
 
 from use_computer.coordinates import Coordinate, CoordinateSpace, ScreenInfo, convert
 from use_computer.keys import KeyCombo, canonical, parse_combo
+from use_computer.tree import NodeSelector, TreeScope, Via
 
 
 class MouseButton(str, Enum):
@@ -62,23 +63,70 @@ class _Positioned(BaseAction):
         return Coordinate(x=self.x, y=self.y, space=space)
 
 
+#: Flat selector keys, as they appear in a batch file. They are collected into a NodeSelector so
+#: the JSON reads the way the CLI flags do.
+_SELECTOR_KEYS = ("id", "role", "name", "exact", "nth", "window")
+
+
+class _Selectable(BaseModel):
+    """Mixin for actions that can name an element instead of a point."""
+
+    selector: NodeSelector | None = None
+    via: Via = Field(default=Via.AUTO, description="Which rung of the ladder to take.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _collect_selector(cls, data: Any) -> Any:
+        """Gather the flat selector keys of a batch file into one NodeSelector."""
+        if not isinstance(data, dict) or data.get("selector") is not None:
+            return data
+        present = {key: data[key] for key in _SELECTOR_KEYS if data.get(key) is not None}
+        if not present:
+            return data
+        rest = {key: value for key, value in data.items() if key not in _SELECTOR_KEYS}
+        window = present.pop("window", None)
+        node_id = present.pop("id", None)
+        rest["selector"] = NodeSelector(
+            node_id=node_id,
+            window=TreeScope.parse(window) if isinstance(window, str) else (window or TreeScope()),
+            **present,
+        )
+        return rest
+
+
 class MoveAction(_Positioned):
     action: Literal["move"] = "move"
     x: int
     y: int
 
 
-class ClickAction(_Positioned):
+class _PositionedOrSelected(_Positioned, _Selectable):
+    """An action that takes a coordinate *or* an element, never both.
+
+    Rejecting the pair is deliberate: deciding which one wins would be exactly the kind of
+    silent reinterpretation this tool refuses to do with coordinate spaces.
+    """
+
+    @model_validator(mode="after")
+    def _one_target(self) -> _PositionedOrSelected:
+        if self.selector is not None and (self.x is not None or self.y is not None):
+            raise ValueError(
+                "give a coordinate or a selector, not both -- the target is one thing or the other"
+            )
+        return self
+
+
+class ClickAction(_PositionedOrSelected):
     action: Literal["click"] = "click"
     button: MouseButton = MouseButton.LEFT
 
 
-class DoubleClickAction(_Positioned):
+class DoubleClickAction(_PositionedOrSelected):
     action: Literal["double_click"] = "double_click"
     button: MouseButton = MouseButton.LEFT
 
 
-class RightClickAction(_Positioned):
+class RightClickAction(_PositionedOrSelected):
     action: Literal["right_click"] = "right_click"
 
 
@@ -104,7 +152,7 @@ class DragAction(BaseAction):
         return self.space if self.space is not None else CoordinateSpace.SCREENSHOT
 
 
-class ScrollAction(_Positioned):
+class ScrollAction(_PositionedOrSelected):
     action: Literal["scroll"] = "scroll"
     amount: int
     direction: ScrollDirection = ScrollDirection.DOWN
@@ -143,6 +191,77 @@ class ScreenshotAction(BaseAction):
     )
 
 
+class TreeAction(BaseAction):
+    """Read the accessibility tree. An action, so a batch can end with the resulting state."""
+
+    action: Literal["tree"] = "tree"
+    window: TreeScope = Field(default_factory=TreeScope)
+    depth: int | None = Field(default=None, ge=0, description="None uses the configured depth.")
+    role: str | None = None
+    name: str | None = None
+    of: str | None = Field(default=None, description="Re-enter at a node id from an earlier tree.")
+    all: bool = Field(default=False, description="No pruning and no budget.")
+    out: Path | None = Field(default=None, description="Write the tree JSON here instead.")
+    fallback: bool | None = Field(
+        default=None, description="Screenshot when there is no tree. None uses configuration."
+    )
+
+    @field_validator("window", mode="before")
+    @classmethod
+    def _parse_window(cls, value: Any) -> Any:
+        return TreeScope.parse(value) if isinstance(value, str) else value
+
+
+class _ElementAction(BaseAction, _Selectable):
+    """An action that only exists against an element: there is no coordinate form of it."""
+
+    @model_validator(mode="after")
+    def _needs_a_selector(self) -> _ElementAction:
+        name = getattr(self, "action", type(self).__name__)
+        if self.selector is None:
+            raise ValueError(f"{name} needs an element: pass --id, --role or --name")
+        if self.via is Via.COORDINATE:
+            # There is no coordinate form of these. Clicking the centre of a node to approximate
+            # `focus` or `set_value` would be a different gesture wearing the same name.
+            raise ValueError(f"{name} has no coordinate form; --via coordinate cannot apply")
+        return self
+
+
+class FocusAction(_ElementAction):
+    action: Literal["focus"] = "focus"
+
+
+class ToggleAction(_ElementAction):
+    action: Literal["toggle"] = "toggle"
+
+
+class ExpandAction(_ElementAction):
+    action: Literal["expand"] = "expand"
+
+
+class CollapseAction(_ElementAction):
+    action: Literal["collapse"] = "collapse"
+
+
+class SelectAction(_ElementAction):
+    action: Literal["select"] = "select"
+
+
+class SetValueAction(_ElementAction):
+    """Assign text atomically, emitting no keystrokes.
+
+    Not a faster `type`: some applications ignore it entirely, because their validation only
+    fires on key events. Both are correct, for different fields.
+    """
+
+    action: Literal["set_value"] = "set_value"
+    value: str
+
+
+class ShowMenuAction(_ElementAction):
+    action: Literal["show_menu"] = "show_menu"
+
+
 Action = Annotated[
     MoveAction
     | ClickAction
@@ -152,9 +271,34 @@ Action = Annotated[
     | ScrollAction
     | TypeAction
     | KeyAction
-    | ScreenshotAction,
+    | ScreenshotAction
+    | TreeAction
+    | FocusAction
+    | ToggleAction
+    | ExpandAction
+    | CollapseAction
+    | SelectAction
+    | SetValueAction
+    | ShowMenuAction,
     Field(discriminator="action"),
 ]
+
+#: The actions that operate an element rather than a point. `click` and friends are not here:
+#: they are in both worlds, and which one they took is decided by their selector.
+ELEMENT_ONLY = (
+    FocusAction,
+    ToggleAction,
+    ExpandAction,
+    CollapseAction,
+    SelectAction,
+    SetValueAction,
+    ShowMenuAction,
+)
+
+
+def selector_of(action: Action) -> NodeSelector | None:
+    """The element this action names, if it names one."""
+    return getattr(action, "selector", None)
 
 #: Parses a batch file: a JSON array of action objects, discriminated on `action`.
 ActionListAdapter: TypeAdapter[list[Action]] = TypeAdapter(list[Action])

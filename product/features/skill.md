@@ -2,8 +2,8 @@
 title: "Agent Skill"
 status: synced
 author: ""
-last-modified: "2026-09-02T00:00:00.000Z"
-version: "1.0"
+last-modified: "2026-09-05T00:00:00.000Z"
+version: "1.1"
 ---
 
 # Agent Skill
@@ -17,6 +17,25 @@ the installed version. So the skill ships **inside the package** and is installe
 root. A file at the repository root does not ship in the wheel, and a skill that is not in the
 wheel does not exist for anyone who installed from PyPI. CI verifies its presence in the built
 wheel before release.
+
+## What it teaches
+
+The skill is the only reason any of this is reachable by the agent it was built for, so its
+content is part of the specification, not a README:
+
+1. **`tree` before `screenshot`.** The opening decision procedure is: read the tree, act on what
+   you find, and reach for a screenshot and ui-locator only when the tree cannot see the element.
+   Order is instruction — an agent follows what it reads first.
+2. **Both addressing modes**, with a worked example of each, and the explicit statement that pixel
+   coordinates remain correct and supported.
+3. **`set-value` versus `type`**, because choosing wrong there fails silently in real applications.
+4. **What the errors mean** — ambiguity hands back candidates to choose between; no match is the
+   signal to switch to vision, and it already carries the screenshot path.
+
+`x-skill-version` bumps whenever that guidance changes, so `skill status` reports installed copies
+as outdated instead of leaving agents on stale instructions. The `description` line has to keep
+naming what the skill can do, since that is what an agent reads when deciding whether it is
+relevant at all.
 
 ## The `skill` command
 

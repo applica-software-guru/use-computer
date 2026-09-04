@@ -1,15 +1,31 @@
 ---
 name: use-computer
-description: Execute input on a screen — move, click, double-click, right-click, drag, scroll, type text, press key combinations, capture a screenshot. Use whenever you need to act on a GUI, locally or over VNC. Pair it with ui-locator, which tells you where to click.
+description: Read and act on a GUI — the accessibility tree of what is on screen (roles, names, clickable boxes), then click, focus, toggle, expand, select, set a value, type, press keys, drag, scroll, screenshot. Locally or over VNC. Ask the tree first and use ui-locator's pixel coordinates only when the tree cannot see the element.
 x-skill-id: use-computer
-x-skill-version: "1"
+x-skill-version: "2"
 ---
 
 # use-computer
 
-You act on a screen through the `use-computer` CLI. It moves a real pointer and types real
-keystrokes. It does not decide *what* to click — you do, usually with coordinates from
-`ui-locator`.
+You read and act on a screen through the `use-computer` CLI. It reads the accessibility tree the
+operating system already maintains, and it moves a real pointer and types real keystrokes. It does
+not decide *what* to do — you do.
+
+## Start here: the ladder
+
+Take the highest rung you can reach. Each one is cheaper, faster and more accurate than the one
+below it.
+
+1. **`use-computer tree`** — ask the OS what is on screen. You get roles, names and boxes. Then
+   act on an element by name: `use-computer click --role button --name "Invia"`.
+2. **A coordinate from the tree** — the element is there but the platform will not operate it.
+   `click` falls back to its centre on its own and tells you it did.
+3. **Vision** — the tree cannot see it. Take a screenshot, ask ui-locator where the thing is, and
+   click those pixels.
+
+**Do not start with a screenshot.** Start with `tree`. A screenshot costs you a vision round trip
+and gives you a coordinate that may be stale by the time you use it; the tree gives you a name
+that still resolves.
 
 ## Contract
 
@@ -29,7 +45,62 @@ yourself, which you should not do.
 If a run fails saying the scale is unknown, take a screenshot first (`use-computer screenshot`)
 and read `screen` from the result; do not compute a factor and retry with different numbers.
 
-## Acting
+## Reading the tree
+
+```bash
+use-computer tree --use laptop                    # the focused window, pruned
+use-computer tree --role button                   # only buttons
+use-computer tree --window all --depth 3          # every window, shallow
+use-computer tree --of 0/2/1                      # expand a subtree that was truncated
+```
+
+Each node looks like this:
+
+```json
+{"id": "0/2/1/3", "role": "button", "name": "Invia",
+ "states": ["enabled", "focusable", "showing"],
+ "actions": ["click", "focus"],
+ "box": {"x": 412, "y": 260, "width": 88, "height": 32, "space": "actuation"},
+ "center": {"x": 456, "y": 276, "space": "actuation"}}
+```
+
+- **`actions`** tells you what the platform can do to this node. An **empty list** means it can
+  only be clicked by coordinate — that is rung two, and `click` handles it for you.
+- **`truncated: true`** means the budget cut the tree. The `truncated_ids` are where; re-enter
+  with `--of <id>`. Never assume an element is absent because a truncated tree did not show it.
+- **`root: null`** with a `reason` means there is no tree here: `unavailable` (no provider, or a
+  vnc profile), `denied` (permission), `empty` (the app exposes nothing). A `screenshot` path comes
+  back with it — that is your cue to switch to ui-locator.
+
+## Acting on an element
+
+```bash
+use-computer click --role button --name "Invia" --use laptop
+use-computer click --id 0/2/1/3 --role button --name "Invia"   # id + fingerprint
+use-computer focus --role text --name "Destinatario"
+use-computer set-value --role text --name "Destinatario" --value "mario@example.com"
+use-computer toggle --name "Ricordami"
+use-computer expand --role combobox --name "Paese"
+use-computer select --role listitem --name "Italia"
+use-computer show-menu --id 0/1/4
+```
+
+`--name` is a case-insensitive substring; add `--exact` for equality. `--window` takes
+`focused` (default), `all`, a window title, or `@1234` for a pid.
+
+**Pass `--id` together with `--role` and `--name`** as they came out of `tree`. The id alone is
+just a path, and paths shift when a row is inserted above; with the role and name it is checked,
+and you are told the tree moved instead of acting on the wrong thing.
+
+### `set-value` is not `type`
+
+`set-value` assigns the text atomically and sends **no keystrokes**. It is faster, and some
+applications ignore it entirely because their validation only fires on key events. If a value is
+visibly in the box but the form rejects it, `focus` the field and `type` instead.
+
+## Acting on a coordinate
+
+Still fully supported, and the right thing to do when the tree cannot see your target:
 
 ```bash
 use-computer click --x 120 --y 340 --use staging
@@ -44,7 +115,9 @@ use-computer screenshot --use staging              # writes a file, returns its 
 ```
 
 `type` sends literal text. `ctrl+a` given to `type` types seven characters — use `key` for
-shortcuts.
+shortcuts. `type` and `key` go to whatever holds focus; they take no element. Use `focus` first.
+
+Give an action a coordinate **or** an element, never both.
 
 ## Key syntax
 
@@ -64,6 +137,18 @@ echo '[
   {"action":"type","text":"hello","delay":0.2},
   {"action":"key","combo":"enter"}
 ]' | use-computer - --use staging
+```
+
+With elements, a whole interaction carries no coordinates at all — and the closing `tree` hands
+you the resulting state without a screenshot:
+
+```bash
+echo '[
+  {"action":"focus","role":"text","name":"Destinatario"},
+  {"action":"type","text":"mario@example.com"},
+  {"action":"click","role":"button","name":"Invia"},
+  {"action":"tree"}
+]' | use-computer - --use laptop
 ```
 
 `batch` is the default command, so `use-computer -` and `use-computer actions.json` work. A
@@ -98,6 +183,10 @@ follow a verified action with a `screenshot` call. That is the round trip verify
 
 - `changed: false` after a click → the coordinate was probably stale. **Ask ui-locator again.
   Do not click the same pixel twice.**
+- An action performed through the accessibility API (`"via": "action"`) moves no pointer and paints
+  no hover state, so it changes fewer pixels than the same click would. A small `magnitude` there
+  is **not** failure. When you acted on an element, re-run `tree` instead: it tells you *what*
+  changed, not merely that something did.
 - `changed: true` with a tiny `magnitude` in a corner → a clock or a caret, not a response.
 
 Verification costs two screenshots per action, so use it on the actions whose effect you need
@@ -105,12 +194,24 @@ to confirm, not on every one.
 
 ## Before you act on something risky
 
-`--dry-run` resolves and logs everything — profile, scaled coordinates, normalised keys —
-without performing any of it. Results come back with `"performed": false`. Rehearse a batch you
-are unsure about.
+`--dry-run` resolves and logs everything — profile, scaled coordinates, normalised keys, and the
+selector — without performing any of it. Results come back with `"performed": false`, plus the
+`matched` node and the `via` it would have taken. Rehearse a batch you are unsure about; a dry run
+of an element action is also the cheapest way to check a selector is unambiguous.
 
 ## When it refuses
 
+- **`AmbiguousNodeError`** — several nodes matched. The error lists every candidate with its id,
+  role, name and box. **Choose one** — a tighter `--name`, `--exact`, a `--window`, or `--nth N` —
+  and run it again. Two "OK" buttons in two dialogs is normal; this is not a bug.
+- **`NodeNotFoundError`** — nothing matched. A `screenshot` path comes with it. This is the signal
+  to drop to vision: ui-locator that screenshot rather than trying more selectors.
+- **`ActionNotSupportedError`** — the node does not offer that action. The message lists what it
+  does offer. `click` already falls back to a coordinate on its own, so this means you asked for
+  something with no coordinate form, like `set-value` on a node that is not editable.
+- **`UITreeUnavailableError`** — no accessibility here. On a vnc profile that is permanent: use
+  screenshots and coordinates. Otherwise the message names the extra and, on Linux, the system
+  package to install.
 - **`BackendNotAvailableError`** — the extra is not installed. The message names it.
 - **Local backend not enabled** — the `local` backend controls the user's own machine and needs
   an explicit opt-in. Tell the user to set `allow-local = true` in the profile; do not work

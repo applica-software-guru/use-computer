@@ -2,8 +2,8 @@
 title: "Configuration"
 status: synced
 author: ""
-last-modified: "2026-09-04T00:00:00.000Z"
-version: "1.2"
+last-modified: "2026-09-05T00:00:00.000Z"
+version: "1.3"
 ---
 
 # Configuration
@@ -82,6 +82,19 @@ screenshot of somebody's desktop is not something to leave lying in a working tr
 
 Files are named by capture time and action, `20260904T103012.481Z-click.png`, so they sort and do
 not collide. They are not pruned.
+
+## Reading the tree
+
+Three settings bound what `tree` returns, resolved through the same layers as everything else:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `tree-max-nodes` | `400` | The node budget. Beyond it the tree is truncated and says so. |
+| `tree-depth` | `20` | Maximum depth from the scope root. |
+| `tree-fallback` | `true` | Capture a screenshot when the tree cannot answer. |
+
+The budget is the setting that matters. It exists for the same reason base64 screenshots were
+removed: an unpruned desktop tree poured into an agent's context is expensive and looks useful.
 
 ## Precedence
 

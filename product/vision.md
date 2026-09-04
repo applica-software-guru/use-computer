@@ -2,8 +2,8 @@
 title: "Vision"
 status: synced
 author: ""
-last-modified: "2026-09-02T00:00:00.000Z"
-version: "1.0"
+last-modified: "2026-09-05T00:00:00.000Z"
+version: "1.1"
 ---
 
 # Vision
@@ -12,12 +12,32 @@ version: "1.0"
 clicks, double-clicks, right-clicks, drags, scrolls, types text, presses key combinations,
 and captures a screenshot of the current screen.
 
+It also **reads** the screen structurally: the accessibility tree of what is on it, so an agent can
+find and operate a control without looking at a picture of it.
+
+## The ladder
+
+Every interaction takes the highest rung it can reach:
+
+1. **Element, through the platform API** — the OS performs the action on the button itself. No
+   coordinates at all, so nothing to aim and no scale to get wrong.
+2. **Element, by coordinate** — the tree can see the control but exposes no way to operate it, so
+   click its centre.
+3. **Pixel, from vision** — the tree cannot see it. Screenshot → ui-locator → click those pixels.
+
+Each rung is cheaper, faster and more accurate than the one below. Rung three is the floor the
+whole ladder stands on and is not going anywhere; it is simply no longer the only rung. See
+[ui-tree.md](features/ui-tree.md) and
+[element-addressing.md](features/element-addressing.md).
+
 ## The pair
 
 `use-computer` is the **acting** half of a pair:
 
-- **ui-locator** answers *where* — "where is the Invia button?" — and returns pixel coordinates.
-- **use-computer** performs the click *there*.
+- **ui-locator** answers *where* from pixels — "where is the Invia button?" — for the screens where
+  pixels are all there is.
+- **use-computer** performs the action, and answers *where* itself whenever the operating system
+  will say so.
 
 Both are driven by another AI agent through a CLI that emits JSON on stdout and diagnostics on
 stderr, with a Python API underneath. Neither tool decides what to do; they are precise
@@ -68,7 +88,9 @@ Because it types real keystrokes and moves a real pointer:
 ## Non-goals
 
 - Deciding *what* to click — that is the calling agent's job, with ui-locator's help.
-- Computer vision or element detection — that is ui-locator.
+- **Visual** element detection — finding a control in a picture is ui-locator's job.
+  `use-computer` reads structure from the accessibility API, which is a different thing: when the
+  OS will not say, it falls back to a screenshot and hands it over.
 - Being a general automation framework or a test runner.
 
 ## Agent Notes

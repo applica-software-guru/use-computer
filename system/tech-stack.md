@@ -2,8 +2,8 @@
 title: "Tech Stack"
 status: synced
 author: ""
-last-modified: "2026-09-03T00:00:00.000Z"
-version: "1.2"
+last-modified: "2026-09-05T00:00:00.000Z"
+version: "1.3"
 ---
 
 # Tech Stack
@@ -42,6 +42,23 @@ Backends are optional extras, imported lazily, so the package installs without t
 - **`local`** — `pynput >= 1.8` (input), `mss >= 10` (capture).
   Not pyautogui: its last release, 0.9.54, dates from 2023.
 - **`vnc`** — `vncdotool >= 1.3`, which provides move, click, key, type and capture over RFB.
+- **`tree`** — the accessibility bindings, one per platform behind a `sys_platform` marker:
+
+  | Marker | Package | Why this one |
+  | --- | --- | --- |
+  | `win32` | `uiautomation >= 2.0` | Pure Python over comtypes, no compiler. 2.0.29 shipped August 2025. |
+  | `darwin` | `pyobjc-framework-ApplicationServices >= 10` | `AXUIElement` from the source. 12.2.2 shipped August 2026. |
+  | `linux` | `PyGObject >= 3.46` | The supported AT-SPI binding — but see below. |
+
+  **Linux needs a system package too.** There is no `pyatspi` on PyPI: the bindings ship as
+  `gir1.2-atspi-2.0` (plus `python3-pyatspi` on Debian and Ubuntu) and PyGObject reaches them
+  through GObject Introspection. `pip install` alone cannot finish the job, so
+  `UITreeUnavailableError` names both halves.
+
+  Not **dogtail**: it is the obvious Linux shortcut and is GPLv2 — fine for a test harness that
+  runs it, wrong for a permissively licensed library that imports it. Not **atomacos**: its last
+  release, 3.3.0, dates from May 2021, which is the same staleness argument that already ruled out
+  pyautogui, and it should be applied consistently or not at all.
 
 ## Development
 

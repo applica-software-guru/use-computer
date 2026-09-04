@@ -2,8 +2,8 @@
 title: "Backends"
 status: synced
 author: ""
-last-modified: "2026-09-03T00:00:00.000Z"
-version: "1.1"
+last-modified: "2026-09-05T00:00:00.000Z"
+version: "1.2"
 ---
 
 # Backends
@@ -30,6 +30,34 @@ Drives a remote framebuffer over RFB.
 - Connection setup dominates the cost of a single action, which is why a run performs a whole
   batch over one connection. See [batch-execution.md](batch-execution.md).
 - Credentials come from the environment or `.env`, never from the committed config file.
+
+## Reading and operating the interface
+
+Actuation is one capability; reading the accessibility tree and operating elements through it is
+another, and the two do not belong to the same backend split. `local` has it, per platform; `vnc`
+structurally cannot, because RFB carries pixels and nothing else.
+
+So it is a second Protocol, `AccessibilityProvider`, chosen by the **running platform** rather than
+by configuration — a profile does not get to claim macOS accessibility on Linux:
+
+| Platform | API | Binding |
+| --- | --- | --- |
+| Linux | AT-SPI 2 | PyGObject + the system `Atspi` typelib |
+| Windows | UI Automation | `uiautomation` |
+| macOS | `AXUIElement` | `pyobjc-framework-ApplicationServices` |
+
+```bash
+pip install "use-computer-cli[local,tree]"
+```
+
+Linux is the awkward one: there is no `pyatspi` on PyPI. The bindings ship as a distro package
+(`gir1.2-atspi-2.0`, plus `python3-pyatspi` on Debian and Ubuntu) and PyGObject reaches them
+through GObject Introspection, so `pip install` alone cannot finish the job there.
+`UITreeUnavailableError` must therefore name **both** halves — the extra and the system package —
+because the agent reading that message is the one that has to get unstuck.
+
+On a vnc profile, `tree` and every element-addressed action fail immediately with that error and
+the agent uses coordinates. No emulation, no pretending.
 
 ## One interface
 

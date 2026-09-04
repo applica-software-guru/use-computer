@@ -2,8 +2,8 @@
 title: "Coordinate Spaces"
 status: synced
 author: ""
-last-modified: "2026-09-02T00:00:00.000Z"
-version: "1.0"
+last-modified: "2026-09-05T00:00:00.000Z"
+version: "1.1"
 ---
 
 # Coordinate Spaces
@@ -31,6 +31,19 @@ every click land in the wrong place, and nothing about the failure looks like a 
    reported sizes are inconsistent — the action fails with an error explaining what is unknown and
    how to resolve it (capture a screenshot to establish the ratio, or set the scale explicitly in
    the profile).
+
+## Accessibility boxes arrive in actuation units
+
+The accessibility API reports geometry in the OS's own units — the **actuation** space. A node's
+`box` and `center` therefore carry `space: actuation` and are never reinterpreted as screenshot
+pixels. This is easy to get wrong because on a 1:1 display the two agree, and the bug only appears
+on somebody's HiDPI laptop.
+
+## Rung one needs no coordinates at all
+
+Operating an element through the platform API involves no geometry, so it works even when the scale
+is unknown — the one situation where this tool otherwise refuses to act. An agent stuck on
+"the scale is unknown" can still get work done with `--via action`.
 
 ## Overriding
 

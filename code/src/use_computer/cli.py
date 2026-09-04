@@ -26,8 +26,11 @@ from use_computer.actions import (
     Action,
     ActionListAdapter,
     ClickAction,
+    CollapseAction,
     DoubleClickAction,
     DragAction,
+    ExpandAction,
+    FocusAction,
     KeyAction,
     MouseButton,
     MoveAction,
@@ -35,6 +38,11 @@ from use_computer.actions import (
     ScreenshotAction,
     ScrollAction,
     ScrollDirection,
+    SelectAction,
+    SetValueAction,
+    ShowMenuAction,
+    ToggleAction,
+    TreeAction,
     TypeAction,
 )
 from use_computer.config import ResolvedConfig, profile_env_var, write_initial_config
@@ -47,6 +55,7 @@ from use_computer.skill import install as skill_install
 from use_computer.skill import remove as skill_remove
 from use_computer.skill import status as skill_status
 from use_computer.skill import update as skill_update
+from use_computer.tree import NodeSelector, TreeScope, Via
 
 
 class BackendKind(str, Enum):
@@ -117,6 +126,81 @@ VerifyOption = Annotated[
 ]
 VerboseOption = Annotated[int, typer.Option("-v", count=True, help="Diagnostics on stderr.")]
 
+# --- selector options ---------------------------------------------------------------------------
+# An action names its target by coordinate or by element. These are the element half, shared by
+# every command that accepts one, so an agent learns them once.
+
+IdOption = Annotated[
+    str | None, typer.Option("--id", help="Node id from `tree`. Checked against role and name.")
+]
+RoleOption = Annotated[str | None, typer.Option("--role", help="Match by role.")]
+NameOption = Annotated[str | None, typer.Option("--name", help="Match by name (substring).")]
+ExactOption = Annotated[bool, typer.Option("--exact", help="Match the name exactly.")]
+NthOption = Annotated[
+    int | None, typer.Option("--nth", help="Pick one of several candidates, 0-based.")
+]
+WindowOption = Annotated[
+    str | None, typer.Option("--window", help="focused | all | TITLE | @PID.", metavar="SCOPE")
+]
+ViaOption = Annotated[Via, typer.Option("--via", help="Which rung to take.")]
+
+
+def _build(
+    kind: Any, selector: NodeSelector | None, via: Via, **fields: Any
+) -> Action:
+    """Construct an action from either a coordinate or an element -- never both.
+
+    Choosing between them would be exactly the kind of silent reinterpretation this tool refuses
+    to do with coordinate spaces, so a caller that gives both is told to pick one.
+    """
+    if selector is None:
+        return kind(**fields)  # type: ignore[no-any-return]
+    if fields.get("x") is not None or fields.get("y") is not None:
+        _err.print(
+            "[red]error:[/red] give a coordinate or a selector, not both -- "
+            "the target is one thing or the other"
+        )
+        raise typer.Exit(EXIT_USAGE)
+    fields = {k: v for k, v in fields.items() if k not in ("x", "y", "space")}
+    return kind(selector=selector, via=via, **fields)  # type: ignore[no-any-return]
+
+
+def _selector(
+    node_id: str | None,
+    role: str | None,
+    name: str | None,
+    exact: bool,
+    nth: int | None,
+    window: str | None,
+) -> NodeSelector | None:
+    """Build a selector from the flags, or None when the action was given a coordinate."""
+    if node_id is None and role is None and name is None:
+        return None
+    return NodeSelector(
+        node_id=node_id,
+        role=role,
+        name=name,
+        exact=exact,
+        nth=nth,
+        window=TreeScope.parse(window),
+    )
+
+
+def _require_selector(
+    node_id: str | None,
+    role: str | None,
+    name: str | None,
+    exact: bool,
+    nth: int | None,
+    window: str | None,
+) -> NodeSelector:
+    """For the actions that only exist against an element."""
+    selector = _selector(node_id, role, name, exact, nth, window)
+    if selector is None:
+        _err.print("[red]error:[/red] this action needs an element: pass --id, --role or --name")
+        raise typer.Exit(EXIT_USAGE)
+    return selector
+
 
 def _emit(payload: Any) -> None:
     """stdout is JSON and nothing else."""
@@ -171,6 +255,14 @@ def _run(actions: Sequence[Action], config: ResolvedConfig, verbose: int = 0) ->
         for item in result.results:
             if item.error is not None:
                 _err.print(f"[red]{item.error.type}:[/red] {item.error.message}")
+                for candidate in item.error.candidates or ():
+                    name = f" {candidate.name!r}" if candidate.name else ""
+                    _err.print(
+                        f"  [dim]{candidate.id}[/dim] {candidate.role}{name} "
+                        f"at ({candidate.box.x}, {candidate.box.y})"
+                    )
+                if item.error.screenshot is not None:
+                    _err.print(f"  [dim]screenshot: {item.error.screenshot.path}[/dim]")
         raise typer.Exit(EXIT_FAILURE)
     if verbose:
         _err.print(f"[green]ok[/green] {len(result.results)} action(s)")
@@ -201,6 +293,13 @@ def click(
     x: XOption = None,
     y: YOption = None,
     button: Annotated[MouseButton, typer.Option("--button")] = MouseButton.LEFT,
+    id: IdOption = None,
+    role: RoleOption = None,
+    name: NameOption = None,
+    exact: ExactOption = False,
+    nth: NthOption = None,
+    window: WindowOption = None,
+    via: ViaOption = Via.AUTO,
     use: UseOption = None,
     space: SpaceOption = None,
     delay: DelayOption = None,
@@ -208,15 +307,27 @@ def click(
     verify: VerifyOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
-    """Click, at a coordinate or where the pointer already is."""
+    """Click an element, a coordinate, or where the pointer already is."""
     config = _config(use, space=space, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
-    _run([ClickAction(x=x, y=y, space=space, button=button)], config, verbose)
+    selector = _selector(id, role, name, exact, nth, window)
+    _run(
+        [_build(ClickAction, selector, via, x=x, y=y, space=space, button=button)],
+        config,
+        verbose,
+    )
 
 
 @app.command("double-click")
 def double_click(
     x: XOption = None,
     y: YOption = None,
+    id: IdOption = None,
+    role: RoleOption = None,
+    name: NameOption = None,
+    exact: ExactOption = False,
+    nth: NthOption = None,
+    window: WindowOption = None,
+    via: ViaOption = Via.AUTO,
     use: UseOption = None,
     space: SpaceOption = None,
     delay: DelayOption = None,
@@ -224,15 +335,23 @@ def double_click(
     verify: VerifyOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
-    """Double-click."""
+    """Double-click an element or a coordinate."""
     config = _config(use, space=space, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
-    _run([DoubleClickAction(x=x, y=y, space=space)], config, verbose)
+    selector = _selector(id, role, name, exact, nth, window)
+    _run([_build(DoubleClickAction, selector, via, x=x, y=y, space=space)], config, verbose)
 
 
 @app.command("right-click")
 def right_click(
     x: XOption = None,
     y: YOption = None,
+    id: IdOption = None,
+    role: RoleOption = None,
+    name: NameOption = None,
+    exact: ExactOption = False,
+    nth: NthOption = None,
+    window: WindowOption = None,
+    via: ViaOption = Via.AUTO,
     use: UseOption = None,
     space: SpaceOption = None,
     delay: DelayOption = None,
@@ -240,9 +359,10 @@ def right_click(
     verify: VerifyOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
-    """Click with the secondary button."""
+    """Click an element or a coordinate with the secondary button."""
     config = _config(use, space=space, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
-    _run([RightClickAction(x=x, y=y, space=space)], config, verbose)
+    selector = _selector(id, role, name, exact, nth, window)
+    _run([_build(RightClickAction, selector, via, x=x, y=y, space=space)], config, verbose)
 
 
 @app.command()
@@ -273,6 +393,13 @@ def scroll(
     direction: Annotated[ScrollDirection, typer.Option("--direction")] = ScrollDirection.DOWN,
     x: XOption = None,
     y: YOption = None,
+    id: IdOption = None,
+    role: RoleOption = None,
+    name: NameOption = None,
+    exact: ExactOption = False,
+    nth: NthOption = None,
+    window: WindowOption = None,
+    via: ViaOption = Via.AUTO,
     use: UseOption = None,
     space: SpaceOption = None,
     delay: DelayOption = None,
@@ -280,9 +407,19 @@ def scroll(
     verify: VerifyOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
-    """Scroll."""
+    """Scroll, at an element or a coordinate."""
     config = _config(use, space=space, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
-    _run([ScrollAction(amount=amount, direction=direction, x=x, y=y, space=space)], config, verbose)
+    selector = _selector(id, role, name, exact, nth, window)
+    _run(
+        [
+            _build(
+                ScrollAction, selector, via, amount=amount, direction=direction, x=x, y=y,
+                space=space,
+            )
+        ],
+        config,
+        verbose,
+    )
 
 
 @app.command("type")
@@ -333,6 +470,111 @@ def screenshot(
     """Capture the current screen to a file and report its path."""
     config = _config(use, verbose=verbose)
     _run([ScreenshotAction(out=out)], config, verbose)
+
+
+# --- element commands ---------------------------------------------------------------------------
+
+
+@app.command()
+def tree(
+    window: WindowOption = None,
+    depth: Annotated[int | None, typer.Option("--depth", help="Maximum depth.")] = None,
+    role: RoleOption = None,
+    name: NameOption = None,
+    of: Annotated[
+        str | None, typer.Option("--of", help="Re-enter at a node id from an earlier tree.")
+    ] = None,
+    all: Annotated[bool, typer.Option("--all", help="No pruning and no budget.")] = False,
+    out: Annotated[
+        Path | None, typer.Option("--out", help="Write the tree JSON here and return its path.")
+    ] = None,
+    no_fallback: Annotated[
+        bool, typer.Option("--no-fallback", help="Do not capture a screenshot when there is none.")
+    ] = False,
+    use: UseOption = None,
+    verbose: VerboseOption = 0,
+) -> None:
+    """Read the accessibility tree of the focused window."""
+    config = _config(use, verbose=verbose)
+    _run(
+        [
+            TreeAction(
+                window=TreeScope.parse(window),
+                depth=depth,
+                role=role,
+                name=name,
+                of=of,
+                all=all,
+                out=out,
+                fallback=False if no_fallback else None,
+            )
+        ],
+        config,
+        verbose,
+    )
+
+
+def _element_command(kind: Any, help_text: str) -> Any:
+    """Every element-only action takes the same flags; declaring them once keeps them the same."""
+
+    def command(
+        id: IdOption = None,
+        role: RoleOption = None,
+        name: NameOption = None,
+        exact: ExactOption = False,
+        nth: NthOption = None,
+        window: WindowOption = None,
+        use: UseOption = None,
+        delay: DelayOption = None,
+        dry_run: DryRunOption = False,
+        verify: VerifyOption = False,
+        verbose: VerboseOption = 0,
+    ) -> None:
+        config = _config(use, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
+        selector = _require_selector(id, role, name, exact, nth, window)
+        _run([kind(selector=selector)], config, verbose)
+
+    command.__doc__ = help_text
+    command.__name__ = kind.__name__
+    return command
+
+
+@app.command("set-value")
+def set_value(
+    value: Annotated[str, typer.Option("--value", help="The text to assign.")],
+    id: IdOption = None,
+    role: RoleOption = None,
+    name: NameOption = None,
+    exact: ExactOption = False,
+    nth: NthOption = None,
+    window: WindowOption = None,
+    use: UseOption = None,
+    delay: DelayOption = None,
+    dry_run: DryRunOption = False,
+    verify: VerifyOption = False,
+    verbose: VerboseOption = 0,
+) -> None:
+    """Assign a value atomically, without keystrokes.
+
+    Not a faster `type`: this emits no key events, and some applications only validate on them.
+    """
+    config = _config(use, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
+    selector = _require_selector(id, role, name, exact, nth, window)
+    _run([SetValueAction(selector=selector, value=value)], config, verbose)
+
+
+app.command("focus")(_element_command(FocusAction, "Give keyboard focus to an element."))
+app.command("toggle")(_element_command(ToggleAction, "Flip a checkbox, switch or toggle button."))
+app.command("expand")(
+    _element_command(ExpandAction, "Open a disclosure, combo box or tree item.")
+)
+app.command("collapse")(_element_command(CollapseAction, "Close one."))
+app.command("select")(
+    _element_command(SelectAction, "Select an item in a list, tab strip or menu.")
+)
+app.command("show-menu")(
+    _element_command(ShowMenuAction, "Open an element's context menu through the platform.")
+)
 
 
 @app.command()
@@ -647,6 +889,14 @@ _COMMANDS = frozenset(
         "type",
         "key",
         "screenshot",
+        "tree",
+        "focus",
+        "toggle",
+        "expand",
+        "collapse",
+        "select",
+        "set-value",
+        "show-menu",
         "batch",
         "config",
         "skill",

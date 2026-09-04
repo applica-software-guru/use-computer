@@ -7,16 +7,20 @@ one and returns the same shape.
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from types import TracebackType
-from typing import Any
+from typing import Any, NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from use_computer.accessibility import AccessibilityProvider, create_provider
+from use_computer.accessibility import roles as canonical
 from use_computer.actions import (
+    ELEMENT_ONLY,
     Action,
     DoubleClickAction,
     DragAction,
@@ -26,8 +30,10 @@ from use_computer.actions import (
     RightClickAction,
     ScreenshotAction,
     ScrollAction,
+    TreeAction,
     TypeAction,
     resolve,
+    selector_of,
     with_default_space,
 )
 from use_computer.backends import Backend, create_backend
@@ -40,7 +46,54 @@ from use_computer.config import (
 )
 from use_computer.config import load as load_config
 from use_computer.coordinates import Coordinate, ScreenInfo
-from use_computer.errors import UseComputerError
+from use_computer.errors import (
+    ActionFailedError,
+    ActionNotSupportedError,
+    AmbiguousNodeError,
+    NodeNotFoundError,
+    PermissionDeniedError,
+    UITreeUnavailableError,
+    UseComputerError,
+)
+from use_computer.selectors import budget, count, find, prune, resolve_one, subtree
+from use_computer.tree import (
+    Box,
+    NodeSelector,
+    TreeReason,
+    TreeResult,
+    UINode,
+    Via,
+)
+
+#: Which canonical accessibility action each member of the action set asks the platform for.
+#: `double_click`, `right_click` and `scroll` are deliberately absent: the accessibility API has
+#: no double-click, no secondary click and no scroll-by-an-amount, so they address an element to
+#: find *where* and then act with a real pointer.
+API_ACTION = {
+    "click": canonical.CLICK,
+    "focus": canonical.FOCUS,
+    "toggle": canonical.TOGGLE,
+    "expand": canonical.EXPAND,
+    "collapse": canonical.COLLAPSE,
+    "select": canonical.SELECT,
+    "set_value": canonical.SET_VALUE,
+    "show_menu": canonical.SHOW_MENU,
+}
+
+
+class Candidate(BaseModel):
+    """One of several nodes a selector matched. Enough to choose between them."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    role: str
+    name: str | None = None
+    box: Box
+
+    @classmethod
+    def of(cls, node: UINode) -> Candidate:
+        return cls(id=node.id, role=node.role, name=node.name, box=node.box)
 
 
 class ErrorInfo(BaseModel):
@@ -50,10 +103,29 @@ class ErrorInfo(BaseModel):
 
     type: str
     message: str
+    candidates: tuple[Candidate, ...] | None = Field(
+        default=None, description="For an ambiguous selector: what to choose between."
+    )
+    screenshot: Screenshot | None = Field(
+        default=None, description="For a selector that matched nothing: the picture to look at."
+    )
 
     @classmethod
     def of(cls, exc: BaseException) -> ErrorInfo:
-        return cls(type=type(exc).__name__, message=str(exc))
+        candidates = None
+        screenshot = None
+        if isinstance(exc, AmbiguousNodeError):
+            # The candidate list is the useful part of this error: it saves the agent a second
+            # round trip to work out how to narrow the selector.
+            candidates = tuple(Candidate.of(node) for node in exc.candidates)
+        if isinstance(exc, NodeNotFoundError):
+            screenshot = exc.screenshot
+        return cls(
+            type=type(exc).__name__,
+            message=str(exc),
+            candidates=candidates,
+            screenshot=screenshot,
+        )
 
 
 class ActionResult(BaseModel):
@@ -72,11 +144,25 @@ class ActionResult(BaseModel):
     duration_ms: float
     change: ChangeReport | None = None
     screenshot: Screenshot | None = None
+    tree: TreeResult | None = Field(default=None, description="What `tree` read.")
+    matched: UINode | None = Field(default=None, description="The node a selector resolved to.")
+    via: Via | None = Field(
+        default=None, description="The rung actually taken; never `auto`."
+    )
     error: ErrorInfo | None = None
 
     @property
     def ok(self) -> bool:
         return self.error is None
+
+
+class _Outcome(NamedTuple):
+    """What performing one action produced, beyond the fact that it ran."""
+
+    screenshot: Screenshot | None = None
+    tree: TreeResult | None = None
+    via: Via | None = None
+    resolved: Coordinate | None = None
 
 
 class RunResult(BaseModel):
@@ -101,12 +187,17 @@ class Session:
         *,
         profile: str,
         settings: Settings | None = None,
+        provider: AccessibilityProvider | None = None,
     ) -> None:
         self._backend = backend
         self._profile = profile
         self._settings = settings or Settings()
         self._screenshot_dir = self._settings.screenshot_dir or default_screenshot_dir()
         self._screen = backend.screen_info()
+        #: Built on the first action that needs it, so a run of pure coordinate actions never
+        #: touches an accessibility API -- and never pays for one that is not installed.
+        self._provider_instance = provider
+        self._provider_built = provider is not None
 
     @classmethod
     def from_profile(
@@ -133,7 +224,16 @@ class Session:
         self.close()
 
     def close(self) -> None:
+        if self._provider_instance is not None:
+            self._provider_instance.close()
         self._backend.close()
+
+    def _provider(self) -> AccessibilityProvider:
+        if not self._provider_built:
+            self._provider_instance = create_provider(self._backend.name)
+            self._provider_built = True
+        assert self._provider_instance is not None
+        return self._provider_instance
 
     # --- running -----------------------------------------------------------------------------
 
@@ -186,17 +286,32 @@ class Session:
         origin: Coordinate | None = None
         screenshot: Screenshot | None = None
         change: ChangeReport | None = None
+        tree: TreeResult | None = None
+        matched: UINode | None = None
+        via: Via | None = None
         performed = False
         error: ErrorInfo | None = None
 
         try:
             target, origin = resolve(action, self._screen)
+            selector = selector_of(action)
+            if selector is not None:
+                # Resolution happens now, against a tree read now. That is what makes a handle
+                # from an earlier run safe to carry: nothing is trusted from the old snapshot.
+                matched = self._resolve_node(selector)
             if settings.dry_run:
-                # Everything above ran: the profile, the scaling, the key parsing. Only the
-                # actuation is skipped.
-                pass
+                # Everything above ran: the profile, the scaling, the key parsing, and the
+                # selector. A dry run that skipped resolution would tell the agent nothing it
+                # did not already know.
+                if matched is not None:
+                    via = self._plan_via(action, matched)
+                    if via is Via.COORDINATE:
+                        target = matched.center
             else:
-                screenshot = self._perform(action, target, origin)
+                outcome = self._perform(action, target, origin, matched)
+                screenshot, tree, via = outcome.screenshot, outcome.tree, outcome.via
+                if outcome.resolved is not None:
+                    target = outcome.resolved
                 performed = True
 
             delay = action.delay if action.delay is not None else settings.delay
@@ -229,13 +344,47 @@ class Session:
             duration_ms=round((time.perf_counter() - started) * 1000, 3),
             change=change,
             screenshot=screenshot,
+            tree=tree,
+            matched=matched,
+            via=via,
             error=error,
         )
 
     def _perform(
-        self, action: Action, target: Coordinate | None, origin: Coordinate | None
-    ) -> Screenshot | None:
+        self,
+        action: Action,
+        target: Coordinate | None,
+        origin: Coordinate | None,
+        matched: UINode | None,
+    ) -> _Outcome:
         backend = self._backend
+        via: Via | None = None
+        resolved: Coordinate | None = None
+
+        if isinstance(action, TreeAction):
+            return _Outcome(tree=self._tree(action))
+
+        if matched is not None:
+            via = self._plan_via(action, matched)
+            if via is Via.ACTION:
+                wanted = API_ACTION[action.action]
+                done = self._provider().perform(
+                    matched.id, wanted, getattr(action, "value", None)
+                )
+                if done:
+                    return _Outcome(via=Via.ACTION)
+                requested = getattr(action, "via", Via.AUTO)
+                if requested is Via.ACTION or isinstance(action, ELEMENT_ONLY):
+                    # Asked for rung one and only rung one. Several of these APIs report failure
+                    # by returning false, so this is a real failure, not an absent exception.
+                    raise ActionFailedError(
+                        f"the platform refused {wanted!r} on {matched.describe()}"
+                    )
+                via = Via.COORDINATE
+            # Rung two: the tree found it, the platform will not operate it, so click its centre.
+            resolved = matched.center
+            target = resolved
+
         x, y = (target.x, target.y) if target else (None, None)
 
         if isinstance(action, MoveAction):
@@ -256,10 +405,123 @@ class Session:
         elif isinstance(action, KeyAction):
             backend.key(action.key_combo)
         elif isinstance(action, ScreenshotAction):
-            return self._capture(action)
+            return _Outcome(screenshot=self._capture(action))
         else:  # ClickAction, and anything else positional with a button
             backend.click(x, y, getattr(action, "button", MouseButton.LEFT), 1)
-        return None
+        return _Outcome(via=via, resolved=resolved)
+
+    # --- the tree, and the elements in it ------------------------------------------------------
+
+    def _plan_via(self, action: Action, node: UINode) -> Via:
+        """Which rung this action takes against this node, or why it cannot take one.
+
+        Never a silent substitution: an action the platform does not offer is an error naming
+        what the node *does* offer, and an action with no coordinate form never quietly becomes
+        a click at a centre.
+        """
+        wanted = API_ACTION.get(action.action)
+        requested = getattr(action, "via", Via.AUTO)
+
+        if isinstance(action, ELEMENT_ONLY):
+            assert wanted is not None
+            if wanted not in node.actions:
+                raise ActionNotSupportedError(wanted, node.describe(), node.actions)
+            return Via.ACTION
+
+        if wanted is None:
+            # double_click, right_click, scroll: the element says where, the pointer does it.
+            if requested is Via.ACTION:
+                raise ActionNotSupportedError(action.action, node.describe(), node.actions)
+            return Via.COORDINATE
+
+        if requested is Via.COORDINATE:
+            return Via.COORDINATE
+        if wanted in node.actions:
+            return Via.ACTION
+        if requested is Via.ACTION:
+            raise ActionNotSupportedError(wanted, node.describe(), node.actions)
+        return Via.COORDINATE
+
+    def _resolve_node(self, selector: NodeSelector) -> UINode:
+        """One node, from a tree read right now.
+
+        Resolution runs against the *unpruned* tree: pruning is a reading convenience, and a
+        selector must still be able to name something pruning would have dropped.
+        """
+        root = self._provider().snapshot(selector.window, self._settings.tree_depth)
+        try:
+            return resolve_one(root, selector)
+        except NodeNotFoundError as exc:
+            # Nothing matched is precisely the signal to drop to vision, so hand over the
+            # picture with the error rather than making the agent ask for it.
+            shot = self._fallback_screenshot("nomatch") if self._settings.tree_fallback else None
+            raise NodeNotFoundError(exc.description, screenshot=shot) from exc
+
+    def _tree(self, action: TreeAction) -> TreeResult:
+        """Read the tree, or say why there is none and hand over a screenshot instead."""
+        settings = self._settings
+        depth = action.depth if action.depth is not None else settings.tree_depth
+        fallback = action.fallback if action.fallback is not None else settings.tree_fallback
+
+        try:
+            root = self._provider().snapshot(action.window, depth)
+        except PermissionDeniedError:
+            return self._no_tree(TreeReason.DENIED, fallback)
+        except UITreeUnavailableError:
+            return self._no_tree(TreeReason.UNAVAILABLE, fallback)
+
+        if action.of is not None:
+            found = subtree(root, action.of)
+            if found is None:
+                raise NodeNotFoundError(f"id={action.of}")
+            root = found
+
+        if action.role is not None or action.name is not None:
+            # A filter answers "only buttons": the scope root carrying the matches, flat.
+            selector = NodeSelector(role=action.role, name=action.name, window=action.window)
+            matches = tuple(
+                node.model_copy(update={"children": ()}) for node in find(root, selector)
+            )
+            root = root.model_copy(update={"children": matches})
+        elif not action.all:
+            root = prune(root)
+
+        truncated = False
+        cut: tuple[str, ...] = ()
+        if action.all:
+            total = count(root)
+        else:
+            root, total, truncated, cut = budget(root, settings.tree_max_nodes)
+
+        if not root.children:
+            # The provider works and there is nothing here to act on. Saying "empty" and handing
+            # over the picture is the useful answer; an empty tree on its own is not.
+            return self._no_tree(TreeReason.EMPTY, fallback)
+
+        if action.out is not None:
+            action.out.parent.mkdir(parents=True, exist_ok=True)
+            action.out.write_text(
+                json.dumps(root.model_dump(mode="json"), ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            return TreeResult(
+                node_count=total, truncated=truncated, truncated_ids=cut, path=action.out
+            )
+
+        return TreeResult(root=root, node_count=total, truncated=truncated, truncated_ids=cut)
+
+    def _no_tree(self, reason: TreeReason, fallback: bool) -> TreeResult:
+        shot = self._fallback_screenshot("tree") if fallback else None
+        return TreeResult(reason=reason, screenshot=shot)
+
+    def _fallback_screenshot(self, label: str) -> Screenshot | None:
+        shot = self._safe_screenshot()
+        if shot is None:
+            return None
+        try:
+            return shot.write_to(self._screenshot_path(label))
+        except OSError:
+            return None
 
     def _capture(self, action: ScreenshotAction) -> Screenshot:
         shot = self._backend.screenshot()

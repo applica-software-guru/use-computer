@@ -2,8 +2,8 @@
 title: "Change Detection"
 status: synced
 author: ""
-last-modified: "2026-09-04T00:00:00.000Z"
-version: "1.1"
+last-modified: "2026-09-05T00:00:00.000Z"
+version: "1.2"
 ---
 
 # Change Detection
@@ -35,6 +35,14 @@ The after-screenshot is written to a file and its path comes back in the same re
 is capturing the screen anyway, so reporting where it landed costs nothing — and it saves the agent
 the round trip of asking for a screenshot it has already paid for. This is why there is no separate
 flag for "screenshot after the action": `verify` is it.
+
+## Against an element action, expect less
+
+An action performed through the accessibility API moves no pointer and paints no hover state, so it
+changes fewer pixels than the equivalent coordinate click for the same outcome. A small `magnitude`
+there is not evidence of failure. When the target was an element, re-reading the
+[tree](ui-tree.md) is the better feedback signal: it says *what* changed rather than merely *that*
+something did.
 
 Change detection is **advisory**. A false result does not fail the action; the action was performed
 and the agent decides what it means.

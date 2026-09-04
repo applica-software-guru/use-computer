@@ -38,6 +38,19 @@ dependencies = [
 # pyautogui is deliberately not used: its last release (0.9.54) dates from 2023.
 local = ["pynput>=1.8", "mss>=10"]
 vnc = ["vncdotool>=1.3"]
+# Reading and operating the UI tree. One binding per platform, behind a marker.
+#
+# Linux needs a system package as well: there is no pyatspi on PyPI, so the AT-SPI bindings come
+# from gir1.2-atspi-2.0 (plus python3-pyatspi on Debian/Ubuntu) and PyGObject reaches them through
+# GObject Introspection. UITreeUnavailableError names both halves.
+#
+# Not dogtail (GPLv2 -- fine to run, wrong to import from a permissively licensed library) and not
+# atomacos (last release 3.3.0, May 2021 -- the same staleness argument that ruled out pyautogui).
+tree = [
+    "uiautomation>=2.0; sys_platform == 'win32'",
+    "pyobjc-framework-ApplicationServices>=10; sys_platform == 'darwin'",
+    "PyGObject>=3.46; sys_platform == 'linux'",
+]
 dev = [
     "pytest>=8",
     "pytest-mock>=3.12",
@@ -78,7 +91,16 @@ strict = true
 files = ["src", "tests"]
 
 [[tool.mypy.overrides]]
-module = ["pynput.*", "mss.*", "vncdotool.*", "ApplicationServices.*", "Quartz.*", "tomli"]
+module = [
+    "pynput.*",
+    "mss.*",
+    "vncdotool.*",
+    "ApplicationServices.*",
+    "Quartz.*",
+    "gi.*",
+    "uiautomation.*",
+    "tomli",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

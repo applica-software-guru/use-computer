@@ -79,6 +79,15 @@ class Settings(BaseSettings):
     dry_run: bool = False
     allow_local: bool = False
     continue_on_error: bool = False
+    tree_max_nodes: int = Field(
+        default=400,
+        ge=1,
+        description="The node budget. Beyond it the tree is truncated and says so.",
+    )
+    tree_depth: int = Field(default=20, ge=0, description="Maximum depth from the scope root.")
+    tree_fallback: bool = Field(
+        default=True, description="Capture a screenshot when the tree cannot answer."
+    )
 
 
 #: Scalar settings, usable at the top level of the config file and inside a profile.

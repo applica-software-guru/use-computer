@@ -241,3 +241,82 @@ def test_the_version_is_read_from_the_distribution_that_is_actually_published() 
     assert declared == use_computer.DISTRIBUTION
     assert use_computer.__version__ == metadata.version(declared)
     assert use_computer.__version__ != "0.0.0"
+
+
+# --- element addressing --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def provider(monkeypatch: pytest.MonkeyPatch) -> object:
+    """Every element command in these tests reads the canned tree, never a real desktop."""
+    from tests.fake_provider import FakeProvider
+
+    instance = FakeProvider()
+    monkeypatch.setattr("use_computer.runner.create_provider", lambda backend: instance)
+    return instance
+
+
+def test_tree_emits_the_tree_as_json(
+    runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
+) -> None:
+    write_config(CONFIG)
+    result = invoke(runner, "tree")
+    assert result.exit_code == EXIT_OK
+    tree = json.loads(result.stdout)["results"][0]["tree"]
+    assert tree["root"]["role"] == "dialog"
+    assert tree["reason"] is None
+
+
+def test_clicking_by_name_reports_the_rung_it_took(
+    runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
+) -> None:
+    write_config(CONFIG)
+    result = invoke(runner, "click", "--role", "button", "--name", "Invia")
+    assert result.exit_code == EXIT_OK
+    item = json.loads(result.stdout)["results"][0]
+    assert item["via"] == "action"
+    assert item["matched"]["id"] == "0/1/0"
+    assert provider.calls == [("0/1/0", "click", None)]  # type: ignore[attr-defined]
+
+
+def test_an_ambiguous_selector_lists_the_candidates_on_stderr(
+    runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
+) -> None:
+    write_config(CONFIG)
+    result = invoke(runner, "click", "--role", "button")
+    assert result.exit_code == EXIT_FAILURE
+    err = strip_ansi(result.stderr)
+    assert "AmbiguousNodeError" in err
+    assert "0/1/0" in err and "'Invia'" in err
+    assert "0/1/1" in err and "'Annulla'" in err
+
+
+def test_an_element_command_without_a_selector_is_a_usage_error(
+    runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
+) -> None:
+    write_config(CONFIG)
+    result = invoke(runner, "focus")
+    assert result.exit_code == EXIT_USAGE
+    assert "--id" in strip_ansi(result.stderr)
+
+
+def test_a_coordinate_and_a_selector_together_is_rejected_by_the_cli(
+    runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
+) -> None:
+    write_config(CONFIG)
+    result = invoke(runner, "click", "--x", "1", "--y", "2", "--role", "button")
+    assert result.exit_code == EXIT_USAGE
+    assert "not both" in strip_ansi(result.stderr)
+
+
+def test_set_value_requires_its_value(
+    runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
+) -> None:
+    write_config(CONFIG)
+    result = invoke(runner, "set-value", "--role", "text")
+    assert result.exit_code == EXIT_USAGE
+
+
+def test_every_element_command_is_a_known_command_for_the_default_dispatch() -> None:
+    for name in ("tree", "focus", "toggle", "expand", "collapse", "select", "set-value"):
+        assert apply_default_command(["use-computer", name]) == ["use-computer", name]

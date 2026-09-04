@@ -1,12 +1,22 @@
 # use-computer
 
-Executes input on a screen for computer-use agents: move, click, double-click, right-click,
-drag, scroll, type text, press key combinations, and capture a screenshot.
+Reads and acts on a screen for computer-use agents. It reads the **accessibility tree** the
+operating system already maintains -- roles, names, states and clickable boxes -- and it moves the
+mouse, clicks, drags, scrolls, types text, presses key combinations, and captures screenshots.
 
-`use-computer` is the **acting** half of a pair. [ui-locator](https://github.com/applica-software-guru/ui-locator)
-answers *where* the Invia button is and returns pixel coordinates; `use-computer` performs the
-click there. Both are driven by another AI agent through a CLI that emits JSON on stdout and
-diagnostics on stderr, with a Python API underneath.
+Every interaction takes the highest rung it can reach:
+
+1. **Element, through the platform API** -- the OS presses the button itself. No coordinates, so
+   nothing to aim and no scale to get wrong.
+2. **Element, by coordinate** -- the tree can see the control but exposes no way to operate it, so
+   `use-computer` clicks its centre and tells you it did.
+3. **Pixel, from vision** -- the tree cannot see it. Screenshot,
+   [ui-locator](https://github.com/applica-software-guru/ui-locator), click those pixels.
+
+Each rung is cheaper, faster and more accurate than the one below. Rung three is the floor the
+whole ladder stands on and is not going anywhere; it is simply no longer the only rung. Everything
+is driven by another AI agent through a CLI that emits JSON on stdout and diagnostics on stderr,
+with a Python API underneath.
 
 ## Install
 
@@ -14,9 +24,16 @@ diagnostics on stderr, with a Python API underneath.
 pip install use-computer-cli            # no backend
 pip install "use-computer-cli[local]"   # drive this machine's display (pynput + mss)
 pip install "use-computer-cli[vnc]"     # drive a remote framebuffer over RFB (vncdotool)
+pip install "use-computer-cli[tree]"    # read the accessibility tree
 ```
 
-Backends are optional extras, imported lazily, so the package installs without them.
+Backends and the accessibility bindings are optional extras, imported lazily, so the package
+installs without them.
+
+The `tree` extra installs one binding per platform: `uiautomation` on Windows,
+`pyobjc-framework-ApplicationServices` on macOS, PyGObject on Linux. **Linux needs a system package
+as well** -- there is no `pyatspi` on PyPI, so the AT-SPI bindings come from `gir1.2-atspi-2.0`
+(plus `python3-pyatspi` on Debian and Ubuntu). The error names both halves when one is missing.
 
 The distribution is `use-computer-cli` because `use-computer` is taken on PyPI by an unrelated
 project. The command it installs is `use-computer`, and the package it imports is `use_computer`.
@@ -24,15 +41,27 @@ project. The command it installs is `use-computer`, and the package it imports i
 ## Use
 
 ```bash
-use-computer click --x 120 --y 340 --use staging
+use-computer tree --use laptop                          # what is on screen, structurally
+use-computer click --role button --name "Invia"         # act on it by name
+use-computer set-value --role text --name "Email" --value "mario@example.com"
+use-computer click --x 120 --y 340 --use staging        # or by pixel, when the tree cannot see it
 use-computer type --text "hello" --use staging
 use-computer key ctrl+s --use staging
-use-computer screenshot --use laptop            # writes a file, returns its path
+use-computer screenshot --use laptop                    # writes a file, returns its path
 
 # a batch runs over one connection -- the default command, so `batch` may be omitted
-echo '[{"action":"click","x":120,"y":340},{"action":"key","combo":"enter"}]' \
-  | use-computer - --use staging --verify
+echo '[
+  {"action":"focus","role":"text","name":"Destinatario"},
+  {"action":"type","text":"mario@example.com"},
+  {"action":"click","role":"button","name":"Invia"},
+  {"action":"tree"}
+]' | use-computer - --use laptop
 ```
+
+An action names its target by coordinate **or** by element, never both. A selector that matches
+nothing comes back with a screenshot -- the signal to switch to vision. A selector that matches
+several comes back with the candidates, because two buttons named "OK" in two dialogs is the
+ordinary case and picking one silently fails a hundred runs later.
 
 stdout is one JSON object per run; every diagnostic goes to stderr. Exit codes: `0` success,
 `1` failure, `2` bad usage.
@@ -48,7 +77,8 @@ action and reports the path, so a verified action does not need a `screenshot` c
 - **Setup cost.** Opening a VNC connection dominates a single action, so one run performs a
   batch of actions over one connection.
 - **Blind actuation.** A click that lands on nothing looks exactly like a click that worked, so
-  `--verify` compares the screen before and after and reports whether it changed.
+  `--verify` compares the screen before and after and reports whether it changed -- and an action
+  that went through the accessibility API reports the element it actually operated.
 
 ## Configure
 

@@ -2,8 +2,8 @@
 title: "CLI"
 status: synced
 author: ""
-last-modified: "2026-09-03T00:00:00.000Z"
-version: "1.1"
+last-modified: "2026-09-05T00:00:00.000Z"
+version: "1.2"
 ---
 
 # CLI
@@ -19,6 +19,9 @@ use-computer click --x 120 --y 340 --use staging
 use-computer type --text "hello" --use staging
 use-computer key ctrl+s --use staging
 use-computer screenshot --use laptop
+use-computer tree --use laptop
+use-computer click --role button --name "Invia" --use laptop
+use-computer set-value --id 0/2/1 --value "mario@example.com" --use laptop
 use-computer batch actions.json --use staging
 use-computer config init
 use-computer config show
@@ -43,6 +46,23 @@ An agent can therefore pipe stdout into a JSON parser unconditionally.
 | `--space <screenshot\|actuation>` | Coordinate space of the coordinates given. |
 | `--delay <seconds>` | Delay applied after each action. |
 | `-v/-vv` | Verbosity on stderr. |
+
+## Selector flags
+
+Actions that can address an element share one set of flags — see
+[element-addressing.md](element-addressing.md):
+
+| Flag | Meaning |
+| --- | --- |
+| `--id <path>` | A node id from `tree`. Fingerprint-checked against role and name. |
+| `--role <role>` | Match by role. |
+| `--name <text>` | Match by name (substring, case-insensitive; `--exact` for equality). |
+| `--nth <n>` | Disambiguate between candidates the other flags could not separate. |
+| `--window <focused\|all\|TITLE\|@PID>` | Restrict the search. |
+| `--via <auto\|action\|coordinate>` | Which rung to take. Default `auto`. |
+
+Giving both a coordinate and a selector to the same action is a usage error: the target is one
+thing or the other.
 
 ## Agent Notes
 
