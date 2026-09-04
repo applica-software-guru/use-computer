@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import time
 from collections.abc import Sequence
+from datetime import datetime, timezone
+from pathlib import Path
 from types import TracebackType
 from typing import Any
 
@@ -30,7 +32,12 @@ from use_computer.actions import (
 )
 from use_computer.backends import Backend, create_backend
 from use_computer.compare import ChangeReport, Screenshot, compare
-from use_computer.config import BackendProfile, ResolvedConfig, Settings
+from use_computer.config import (
+    BackendProfile,
+    ResolvedConfig,
+    Settings,
+    default_screenshot_dir,
+)
 from use_computer.config import load as load_config
 from use_computer.coordinates import Coordinate, ScreenInfo
 from use_computer.errors import UseComputerError
@@ -98,6 +105,7 @@ class Session:
         self._backend = backend
         self._profile = profile
         self._settings = settings or Settings()
+        self._screenshot_dir = self._settings.screenshot_dir or default_screenshot_dir()
         self._screen = backend.screen_info()
 
     @classmethod
@@ -199,8 +207,15 @@ class Session:
                 after = self._safe_screenshot()
                 if before is not None and after is not None:
                     change = compare(before, after, settings.verify_threshold)
-                is_capture = isinstance(action, ScreenshotAction)
-                screenshot = (screenshot or after) if is_capture else after
+                if isinstance(action, ScreenshotAction):
+                    # The action already captured and wrote one; do not write it twice.
+                    pass
+                elif after is not None:
+                    # The capture is paid for either way. Writing it down is what saves the
+                    # calling agent a round trip for a screen it already has.
+                    screenshot = after.write_to(
+                        self._screenshot_path(action.action)
+                    )
         except UseComputerError as exc:
             error = ErrorInfo.of(exc)
         except Exception as exc:  # a backend can fail in its own vocabulary
@@ -248,14 +263,12 @@ class Session:
 
     def _capture(self, action: ScreenshotAction) -> Screenshot:
         shot = self._backend.screenshot()
-        if action.out is not None:
-            action.out.parent.mkdir(parents=True, exist_ok=True)
-            if shot.data is not None:
-                action.out.write_bytes(shot.data)
-            shot = shot.model_copy(update={"path": action.out})
-        if not action.base64:
-            shot = shot.model_copy(update={"data": None if action.out else shot.data})
-        return shot
+        return shot.write_to(action.out or self._screenshot_path("screenshot"))
+
+    def _screenshot_path(self, label: str) -> Path:
+        """A name that sorts and does not collide."""
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%f")[:-3] + "Z"
+        return self._screenshot_dir / f"{stamp}-{label}.png"
 
     def _safe_screenshot(self) -> Screenshot | None:
         """Change detection is advisory; a capture that fails must not fail the action."""
@@ -280,25 +293,6 @@ def run_actions(
 
 
 def as_json(result: RunResult) -> dict[str, Any]:
-    """The run payload, with screenshot bytes rendered as base64 where they were requested."""
-    payload = result.model_dump(mode="json", exclude={"results": {"__all__": {"screenshot"}}})
-    payload["results"] = [
-        {**item, "screenshot": _screenshot_json(action.screenshot)}
-        for item, action in zip(payload["results"], result.results, strict=True)
-    ]
-    return payload
-
-
-def _screenshot_json(shot: Screenshot | None) -> dict[str, Any] | None:
-    if shot is None:
-        return None
-    payload: dict[str, Any] = {
-        "path": str(shot.path) if shot.path else None,
-        "width": shot.width,
-        "height": shot.height,
-        "space": shot.space.value,
-        "captured_at": shot.captured_at.isoformat(),
-    }
-    if shot.data is not None:
-        payload["base64"] = shot.base64()
+    """The run payload. A screenshot is a path here, never bytes."""
+    payload: dict[str, Any] = result.model_dump(mode="json")
     return payload

@@ -2,8 +2,8 @@
 title: "Change Detection"
 status: synced
 author: ""
-last-modified: "2026-09-02T00:00:00.000Z"
-version: "1.0"
+last-modified: "2026-09-04T00:00:00.000Z"
+version: "1.1"
 ---
 
 # Change Detection
@@ -30,6 +30,11 @@ real change.
 `changed: false` after a click means the coordinate was probably stale: ask ui-locator again
 rather than clicking the same pixel a second time. `changed: true` with a tiny magnitude in a
 corner is a clock tick, not a response.
+
+The after-screenshot is written to a file and its path comes back in the same result. Verification
+is capturing the screen anyway, so reporting where it landed costs nothing — and it saves the agent
+the round trip of asking for a screenshot it has already paid for. This is why there is no separate
+flag for "screenshot after the action": `verify` is it.
 
 Change detection is **advisory**. A false result does not fail the action; the action was performed
 and the agent decides what it means.

@@ -2,8 +2,8 @@
 title: "Actions"
 status: synced
 author: ""
-last-modified: "2026-09-02T00:00:00.000Z"
-version: "1.0"
+last-modified: "2026-09-04T00:00:00.000Z"
+version: "1.1"
 ---
 
 # Actions
@@ -23,7 +23,7 @@ implements all of it; nothing else is added on top.
 | `scroll` | Scroll by an amount, vertically or horizontally, at a coordinate. |
 | `type` | Type a literal string as keystrokes, at a rate applications do not drop characters from. |
 | `key` | Press a key combination, e.g. `ctrl+shift+t`, using the normalised key syntax. |
-| `screenshot` | Capture the current screen and return it (path and/or base64) with its coordinate space and size. |
+| `screenshot` | Capture the current screen, write it to a file, and return its path with the coordinate space and size. |
 
 `double_click` and `right_click` are distinct actions rather than parameters of `click`, because
 that is how the calling agent thinks about them and because backends implement them differently.
@@ -37,6 +37,15 @@ Every action accepts:
   (see [coordinate-spaces.md](coordinate-spaces.md)).
 - **`verify`** — take a screenshot before and after and report whether the screen changed
   (see [change-detection.md](change-detection.md)).
+
+## Screenshots are files
+
+A screenshot is never returned as bytes. It is written to a file and the result carries the path.
+An agent that wants the pixels reads the file, and pays for it only when it decides to — rather
+than having a megabyte of base64 poured into its context by a batch it did not think about.
+
+`screenshot --out PATH` writes there. Without `--out` it writes into the configured screenshot
+directory under a name that sorts and does not collide.
 
 ## Results
 

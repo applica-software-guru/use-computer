@@ -148,14 +148,29 @@ def test_verification_is_off_unless_asked_for() -> None:
     assert result.results[0].change is None
 
 
-def test_a_screenshot_action_returns_the_capture() -> None:
+def test_a_screenshot_action_returns_a_path_and_never_bytes(tmp_path: Path) -> None:
     backend = FakeBackend()
-    result = session(backend).run([ScreenshotAction(base64=True)])
+    result = session(backend, screenshot_dir=tmp_path / 'shots').run([ScreenshotAction()])
     payload = as_json(result)
     shot = payload["results"][0]["screenshot"]
     assert shot is not None
     assert shot["width"] == 2560
-    assert shot["base64"]
+    assert Path(shot["path"]).is_file()
+    # A megabyte of base64 in the agent's context is the most expensive place it could go.
+    assert "base64" not in shot
+    assert "data" not in shot
+
+
+def test_a_screenshot_without_a_path_still_lands_in_the_screenshot_directory(
+    tmp_path: Path,
+) -> None:
+    backend = FakeBackend()
+    result = session(backend, screenshot_dir=tmp_path / 'shots').run([ScreenshotAction()])
+    written = list((tmp_path / 'shots').iterdir())
+    assert len(written) == 1
+    assert written[0].name.endswith("-screenshot.png")
+    assert result.results[0].screenshot is not None
+    assert result.results[0].screenshot.path == written[0]
 
 
 def test_a_screenshot_action_writes_the_file_it_was_given(tmp_path: Path) -> None:
@@ -164,6 +179,32 @@ def test_a_screenshot_action_writes_the_file_it_was_given(tmp_path: Path) -> Non
     result = session(backend).run([ScreenshotAction(out=out)])
     assert out.is_file()
     assert result.results[0].screenshot is not None
+    assert result.results[0].screenshot.path == out
+
+
+def test_verify_writes_the_screen_it_already_captured_and_reports_where(
+    tmp_path: Path,
+) -> None:
+    """The capture is paid for either way; the path is what saves the agent a round trip."""
+    backend = FakeBackend(colours=[(0, 0, 0), (255, 255, 255)])
+    result = session(backend, verify=True, screenshot_dir=tmp_path / 'shots').run(
+        [ClickAction(x=10, y=10)]
+    )
+    shot = result.results[0].screenshot
+    assert shot is not None
+    assert shot.path is not None
+    assert shot.path.is_file()
+    assert shot.path.name.endswith("-click.png")
+    assert result.results[0].change is not None
+
+
+def test_a_verified_batch_writes_one_file_per_action_not_two(tmp_path: Path) -> None:
+    # The after-screenshot of one action is reused as the before of the next.
+    backend = FakeBackend()
+    session(backend, verify=True, screenshot_dir=tmp_path / 'shots').run(
+        [ClickAction(x=1, y=1), ClickAction(x=2, y=2), ClickAction(x=3, y=3)]
+    )
+    assert len(list((tmp_path / 'shots').iterdir())) == 3
 
 
 def test_the_backend_is_closed_even_when_an_action_failed() -> None:

@@ -44,6 +44,10 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[No
     (home / ".local" / "share").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
     monkeypatch.setenv("XDG_DATA_HOME", str(home / ".local" / "share"))
+    # Both mechanisms, because they are genuinely different: Path.home() consults HOME through
+    # os.path.expanduser, but a patched Path.home does not reach expanduser() at all -- and a
+    # path like "~/shots" resolves through the latter.
+    monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     yield
 

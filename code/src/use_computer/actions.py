@@ -138,8 +138,9 @@ class KeyAction(BaseAction):
 
 class ScreenshotAction(BaseAction):
     action: Literal["screenshot"] = "screenshot"
-    out: Path | None = None
-    base64: bool = False
+    out: Path | None = Field(
+        default=None, description="Where to write it. None means the screenshot directory."
+    )
 
 
 Action = Annotated[

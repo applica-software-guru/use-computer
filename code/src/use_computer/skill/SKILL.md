@@ -40,7 +40,7 @@ use-computer drag --from-x 10 --from-y 20 --to-x 300 --to-y 400 --use staging
 use-computer scroll --amount 3 --direction down --use staging
 use-computer type --text "hello world" --use staging
 use-computer key ctrl+s --use staging
-use-computer screenshot --out shot.png --use staging
+use-computer screenshot --use staging              # writes a file, returns its path
 ```
 
 `type` sends literal text. `ctrl+a` given to `type` types seven characters — use `key` for
@@ -70,7 +70,20 @@ echo '[
 batch stops at the first failure and reports `failed_index`, so you can resume from a known
 point. `--continue-on-error` runs the rest anyway.
 
-## Verify — how you know it worked
+## Screenshots are files
+
+A screenshot is never returned to you as bytes. It is written to a file and you get the path:
+
+```json
+"screenshot": {"path": "/home/you/.local/share/use-computer/screenshots/20260904T103012.481Z-click.png",
+               "width": 2560, "height": 1600, "space": "screenshot"}
+```
+
+Read the file when you actually need to look at the screen. Do not ask for the pixels by default —
+a batch of verified clicks would otherwise bury your context in base64, which is why that option
+does not exist.
+
+## Verify — how you know it worked, and what the screen looks like now
 
 A click that lands on nothing looks exactly like a click that worked. With `--verify` (or
 `"verify": true` on one action) each action reports:
@@ -78,6 +91,10 @@ A click that lands on nothing looks exactly like a click that worked. With `--ve
 ```json
 "change": {"changed": true, "magnitude": 0.18, "threshold": 0.002, "bbox": [40,120,600,400]}
 ```
+
+**`--verify` also gives you the screenshot taken after the action**, at the `screenshot` path in
+the same result. It captured that screen to do the comparison, so you already paid for it: do not
+follow a verified action with a `screenshot` call. That is the round trip verify exists to save.
 
 - `changed: false` after a click → the coordinate was probably stale. **Ask ui-locator again.
   Do not click the same pixel twice.**

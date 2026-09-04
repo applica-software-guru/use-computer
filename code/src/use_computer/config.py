@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     verify: bool = False
     verify_threshold: float = DEFAULT_THRESHOLD
     space: CoordinateSpace = CoordinateSpace.SCREENSHOT
+    screenshot_dir: Path | None = Field(
+        default=None,
+        description="Where screenshots go when no path was given. None means the XDG data dir.",
+    )
     dry_run: bool = False
     allow_local: bool = False
     continue_on_error: bool = False
@@ -195,6 +199,15 @@ def xdg_data_dir() -> Path:
     """The XDG data directory, for anything stored."""
     base = os.environ.get("XDG_DATA_HOME")
     return (Path(base) if base else Path.home() / ".local" / "share") / "use-computer"
+
+
+def default_screenshot_dir() -> Path:
+    """Where screenshots land when nothing said otherwise.
+
+    The XDG *data* directory: a screenshot of somebody's desktop is not disposable like a cache,
+    and it does not belong in a working tree.
+    """
+    return xdg_data_dir() / "screenshots"
 
 
 def env_var_for(field: str) -> str:
@@ -505,6 +518,7 @@ def write_initial_config(
 _TRUE = {"1", "true", "yes", "on"}
 _FALSE = {"0", "false", "no", "off"}
 _BOOL_FIELDS = frozenset({"verify", "dry_run", "allow_local", "continue_on_error"})
+_PATH_FIELDS = frozenset({"screenshot_dir"})
 _FLOAT_FIELDS = frozenset({"delay", "typing_rate", "verify_threshold", "scale"})
 
 
@@ -524,6 +538,8 @@ def _coerce(field: str, value: Any) -> Any:
             return float(value)
         except ValueError as exc:
             raise ConfigError(f"{env_var_for(field)}={value!r} is not a number") from exc
+    if field in _PATH_FIELDS:
+        return Path(value).expanduser()
     if field == "port":
         try:
             return int(value)

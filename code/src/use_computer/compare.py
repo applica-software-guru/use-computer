@@ -10,7 +10,6 @@ downscaled greyscale images. This module is pure: it takes images and returns a 
 
 from __future__ import annotations
 
-import base64
 import io
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,12 +30,17 @@ PIXEL_DELTA = 16
 
 
 class Screenshot(BaseModel):
-    """A captured screen."""
+    """A captured screen.
+
+    ``data`` is held only while a comparison needs it. It is excluded from serialisation: a
+    screenshot that reaches the calling agent is a path, never a megabyte of base64 in its
+    context.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     path: Path | None = None
-    data: bytes | None = Field(default=None, repr=False)
+    data: bytes | None = Field(default=None, repr=False, exclude=True)
     width: int
     height: int
     space: CoordinateSpace = CoordinateSpace.SCREENSHOT
@@ -50,13 +54,18 @@ class Screenshot(BaseModel):
             return Image.open(self.path)
         raise ValueError("screenshot has neither data nor path")
 
-    def base64(self) -> str:
-        """The PNG bytes, base64-encoded, for transport to the calling agent."""
+    def write_to(self, path: Path) -> Screenshot:
+        """Write the PNG to ``path`` and return the screenshot that knows where it lives."""
+        if self.path == path:
+            return self
+        path.parent.mkdir(parents=True, exist_ok=True)
         if self.data is not None:
-            return base64.b64encode(self.data).decode("ascii")
-        if self.path is not None:
-            return base64.b64encode(self.path.read_bytes()).decode("ascii")
-        raise ValueError("screenshot has neither data nor path")
+            path.write_bytes(self.data)
+        elif self.path is not None:
+            path.write_bytes(self.path.read_bytes())
+        else:
+            raise ValueError("screenshot has neither data nor path")
+        return self.model_copy(update={"path": path})
 
 
 class ChangeReport(BaseModel):

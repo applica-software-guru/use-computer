@@ -2,8 +2,8 @@
 title: "Interfaces"
 status: synced
 author: ""
-last-modified: "2026-09-03T00:00:00.000Z"
-version: "1.1"
+last-modified: "2026-09-04T00:00:00.000Z"
+version: "1.2"
 ---
 
 # Interfaces
@@ -24,7 +24,7 @@ use-computer drag        --from-x INT --from-y INT --to-x INT --to-y INT
 use-computer scroll      --amount INT [--direction up|down|left|right] [--x INT --y INT]
 use-computer type        --text STR [--rate FLOAT]
 use-computer key         COMBO
-use-computer screenshot  [--out PATH] [--base64]
+use-computer screenshot  [--out PATH]
 ```
 
 ### Other commands
@@ -43,6 +43,10 @@ use-computer skill  install|update|remove|status
 
 `--use PROFILE`, `--dry-run`, `--verify`, `--space screenshot|actuation`, `--delay SECONDS`,
 `-v/-vv`, `--version`.
+
+`--verify` writes the after-screenshot to a file and reports its path in `screenshot`, so an agent
+that verified an action does not then have to ask for the screen it already paid to capture.
+A screenshot is **never** returned as bytes; there is no base64 anywhere in this contract.
 
 ### Output contract
 
@@ -70,7 +74,11 @@ use-computer skill  install|update|remove|status
       "performed": true,
       "duration_ms": 41.2,
       "change": {"changed": true, "magnitude": 0.18, "threshold": 0.002, "bbox": [40, 120, 600, 400]},
-      "screenshot": null,
+      "screenshot": {
+        "path": "/home/you/.local/share/use-computer/screenshots/20260904T103012.481Z-click.png",
+        "width": 2560, "height": 1600, "space": "screenshot",
+        "captured_at": "2026-09-04T10:30:12.481Z"
+      },
       "error": null
     }
   ]

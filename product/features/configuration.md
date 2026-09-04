@@ -2,8 +2,8 @@
 title: "Configuration"
 status: synced
 author: ""
-last-modified: "2026-09-03T00:00:00.000Z"
-version: "1.1"
+last-modified: "2026-09-04T00:00:00.000Z"
+version: "1.2"
 ---
 
 # Configuration
@@ -72,6 +72,16 @@ port = 5900
 ```
 
 A profile is selected with `--use`, falling back to `default-profile`.
+
+## Where screenshots go
+
+`screenshot-dir` sets the directory screenshots are written to when no explicit path was given. It
+resolves through the same layers as everything else and defaults to the XDG **data** directory,
+`use-computer/screenshots` — never a cache directory, and never inside the repository, because a
+screenshot of somebody's desktop is not something to leave lying in a working tree.
+
+Files are named by capture time and action, `20260904T103012.481Z-click.png`, so they sort and do
+not collide. They are not pruned.
 
 ## Precedence
 

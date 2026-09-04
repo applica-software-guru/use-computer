@@ -323,14 +323,16 @@ def key(
 
 @app.command()
 def screenshot(
-    out: Annotated[Path | None, typer.Option("--out", help="Write the PNG here.")] = None,
-    base64: Annotated[bool, typer.Option("--base64", help="Include the PNG in the JSON.")] = False,
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="Write the PNG here. Otherwise the screenshot directory."),
+    ] = None,
     use: UseOption = None,
     verbose: VerboseOption = 0,
 ) -> None:
-    """Capture the current screen."""
+    """Capture the current screen to a file and report its path."""
     config = _config(use, verbose=verbose)
-    _run([ScreenshotAction(out=out, base64=base64)], config, verbose)
+    _run([ScreenshotAction(out=out)], config, verbose)
 
 
 @app.command()

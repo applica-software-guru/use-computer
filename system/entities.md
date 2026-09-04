@@ -2,8 +2,8 @@
 title: "Entities"
 status: synced
 author: ""
-last-modified: "2026-09-02T00:00:00.000Z"
-version: "1.0"
+last-modified: "2026-09-04T00:00:00.000Z"
+version: "1.1"
 ---
 
 # Entities
@@ -55,7 +55,11 @@ Positional variants carry `Coordinate`s; `TypeAction` carries `text` and an opti
 
 ### Screenshot
 
-`path: Path | None`, `data: bytes | None`, `width`, `height`, `space`, `captured_at`.
+`path: Path`, `width`, `height`, `space`, `captured_at`.
+
+A screenshot that has been surfaced to the caller always has a path: it is a file. `data` is held
+in memory only while a comparison needs it, is never serialised, and never crosses the JSON
+boundary.
 
 ### ChangeReport
 

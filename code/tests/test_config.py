@@ -7,7 +7,13 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import WriteConfig
-from use_computer.config import PROJECT_DIR, find_project_root, load, xdg_config_dir
+from use_computer.config import (
+    PROJECT_DIR,
+    default_screenshot_dir,
+    find_project_root,
+    load,
+    xdg_config_dir,
+)
 from use_computer.errors import ConfigError
 
 CONFIG = """
@@ -165,3 +171,29 @@ def test_a_profile_field_default_is_reported_like_any_other(write_config: WriteC
         "env": "USE_COMPUTER_PORT",
         "source": payload["config-file"],
     }
+
+
+def test_the_screenshot_directory_defaults_to_the_xdg_data_dir(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Never a cache directory: a screenshot of somebody's desktop is not disposable.
+    monkeypatch.setenv("XDG_DATA_HOME", "/somewhere/data")
+    assert default_screenshot_dir() == Path("/somewhere/data/use-computer/screenshots")
+
+
+def test_the_screenshot_directory_is_configurable_like_anything_else(
+    write_config: WriteConfig,
+) -> None:
+    # Prepended, not appended: a key after a [table] header belongs to that table.
+    write_config('screenshot-dir = "/shots"\n' + CONFIG)
+    resolved = load(profile="laptop", environ={})
+    assert resolved.settings.screenshot_dir == Path("/shots")
+    assert resolved.values["screenshot_dir"].layer == "config"
+
+
+def test_a_screenshot_directory_from_the_environment_is_a_path_not_a_string(
+    write_config: WriteConfig,
+) -> None:
+    write_config(CONFIG)
+    resolved = load(profile="laptop", environ={"USE_COMPUTER_SCREENSHOT_DIR": "~/shots"})
+    assert resolved.settings.screenshot_dir == Path.home() / "shots"

@@ -27,7 +27,7 @@ project. The command it installs is `use-computer`, and the package it imports i
 use-computer click --x 120 --y 340 --use staging
 use-computer type --text "hello" --use staging
 use-computer key ctrl+s --use staging
-use-computer screenshot --use laptop --out shot.png
+use-computer screenshot --use laptop            # writes a file, returns its path
 
 # a batch runs over one connection -- the default command, so `batch` may be omitted
 echo '[{"action":"click","x":120,"y":340},{"action":"key","combo":"enter"}]' \
@@ -36,6 +36,9 @@ echo '[{"action":"click","x":120,"y":340},{"action":"key","combo":"enter"}]' \
 
 stdout is one JSON object per run; every diagnostic goes to stderr. Exit codes: `0` success,
 `1` failure, `2` bad usage.
+
+Screenshots are files, never bytes in the JSON. `--verify` writes the screen it captured after the
+action and reports the path, so a verified action does not need a `screenshot` call after it.
 
 ## Three problems it solves
 
