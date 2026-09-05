@@ -446,20 +446,23 @@ def test_an_action_is_one_line(
     write_config(CONFIG)
     result = invoke(runner, "click", "--role", "button", "--name", "Invia")
     assert result.exit_code == EXIT_OK
-    out = strip_ansi(result.stdout).strip()
-    assert out.count("\n") == 0
-    assert "click button 'Invia' at 0/1/0" in out
-    assert "via the platform API" in out
+    lines = strip_ansi(result.stdout).strip().split("\n")
+    assert len(lines) == 2  # the action, then the closing line
+    assert "click button 'Invia' at 0/1/0" in lines[0]
+    assert "via the platform API" in lines[0]
 
 
-def test_an_error_leaves_stdout_empty(
+def test_a_failure_splits_what_happened_from_why(
     runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
 ) -> None:
-    # A reader scrolling back should not have to work out which stream said what.
+    # stdout says what happened, stderr says why. Neither repeats the other, so a reader
+    # scrolling back never has to work out which stream is which.
     write_config(CONFIG)
     result = invoke(runner, "click", "--role", "button")
     assert result.exit_code == EXIT_FAILURE
-    assert strip_ansi(result.stdout).strip() == ""
+    out = strip_ansi(result.stdout).strip()
+    assert out.startswith("failed at action 1")
+    assert "AmbiguousNodeError" not in out
     assert "AmbiguousNodeError" in strip_ansi(result.stderr)
 
 
@@ -471,3 +474,63 @@ def test_the_envelope_is_one_flag_away(
     write_config(CONFIG)
     result = invoke(runner, "windows", "--format", "json")
     assert json.loads(result.stdout)["ok"] is True
+
+
+def test_verify_reports_its_answer_and_where_it_looked(
+    runner: CliRunner, backend: FakeBackend, write_config: WriteConfig
+) -> None:
+    # --verify exists to give feedback. A flag whose whole purpose is feedback must not be silent
+    # in the format everyone gets by default.
+    backend.colours = [(0, 0, 0), (255, 255, 255)]
+    write_config(CONFIG)
+    result = invoke(runner, "click", "--x", "10", "--y", "10", "--verify")
+    assert result.exit_code == EXIT_OK
+    out = strip_ansi(result.stdout)
+    assert "changed" in out
+    assert ".png" in out  # the picture it already paid for, so nobody asks for it twice
+
+
+def test_an_unchanged_screen_says_so_in_a_word(
+    runner: CliRunner, backend: FakeBackend, write_config: WriteConfig
+) -> None:
+    # `unchanged` is the one an agent has to notice: it means the coordinate was stale.
+    backend.colours = [(0, 0, 0), (0, 0, 0)]
+    write_config(CONFIG)
+    result = invoke(runner, "click", "--x", "10", "--y", "10", "--verify")
+    assert "unchanged" in strip_ansi(result.stdout)
+
+
+def test_every_run_ends_with_what_the_envelope_carried(
+    runner: CliRunner, backend: FakeBackend, write_config: WriteConfig
+) -> None:
+    # Cheap must not mean lossy. The envelope was dropped for costing 177 tokens, not because the
+    # facts in it were worthless -- the scale especially, which is what an agent needs the moment
+    # a coordinate lands somewhere surprising.
+    write_config(CONFIG)
+    result = invoke(runner, "click", "--x", "10", "--y", "10")
+    last = strip_ansi(result.stdout).strip().split("\n")[-1]
+    assert last.startswith("ok — ")
+    assert "profile fake" in last
+    assert "backend fake" in last
+    assert "screen 1280x800" in last
+    assert "scale 2" in last
+
+
+def test_a_failure_says_which_action_it_was(
+    runner: CliRunner, backend: FakeBackend, write_config: WriteConfig
+) -> None:
+    write_config(CONFIG)
+    backend.fail_on = "click"
+    result = invoke(runner, "click", "--x", "10", "--y", "10")
+    assert result.exit_code == EXIT_FAILURE
+    assert "failed at action 1" in strip_ansi(result.stdout)
+
+
+def test_an_unknown_scale_is_named_not_omitted(
+    runner: CliRunner, backend: FakeBackend, write_config: WriteConfig
+) -> None:
+    # Refusing to guess a scale is only useful if the caller can see that it is unknown.
+    backend.scale = None
+    write_config(CONFIG)
+    result = invoke(runner, "screenshot")
+    assert "scale unknown" in strip_ansi(result.stdout)

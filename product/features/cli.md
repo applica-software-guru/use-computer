@@ -3,7 +3,7 @@ title: "CLI"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "2.0"
+version: "2.1"
 ---
 
 # CLI
@@ -37,6 +37,28 @@ use-computer skill install --scope project
 - **Exit codes**: `0` success, `1` failure, `2` bad usage. Unchanged, and the primary signal.
 
 `--format json` returns the envelope instead, for anyone piping into a parser.
+
+### Every run ends with what the envelope carried
+
+```
+click button 'Invia' at 0/2/1/3 via the platform API — 12 ms
+ok — profile laptop, backend local, screen 1920x1080, scale 1
+```
+
+**Thirteen tokens** for the facts the 177-token envelope carried: whether it worked, which profile
+and backend answered, the screen, and the scale. Cheap must not mean lossy — the envelope was
+dropped for its price, not because those facts were worthless. The scale in particular is what an
+agent needs the moment a coordinate lands somewhere surprising, and `scale unknown` is printed as
+words, because refusing to guess is only useful if the caller can see that it happened.
+
+On a failure the line says which action it was:
+
+```
+failed at action 3 — profile laptop, backend local, screen 1920x1080, scale 1
+```
+
+**stdout says what happened; stderr says why.** Neither repeats the other, so a reader scrolling
+back never has to work out which stream is which.
 
 ### Why text, and not JSON
 

@@ -319,8 +319,38 @@ def _text_lines(result: Any) -> str:
         elif item.resolved is not None:
             how = f" at ({item.resolved.x}, {item.resolved.y})"
         done = "would " if not item.performed else ""
-        chunks.append(f"{done}{what}{how} \u2014 {item.duration_ms:.0f} ms")
+        # --verify exists to give feedback, so its answer belongs on the line. `unchanged` is the
+        # word an agent has to notice: it means the coordinate was stale, and it is what stops it
+        # clicking the same wrong pixel forever.
+        verified = ""
+        if item.change is not None:
+            verified = (
+                f" \u2014 changed {item.change.magnitude:.0%}"
+                if item.change.changed
+                else " \u2014 unchanged"
+            )
+        chunks.append(f"{done}{what}{how}{verified} \u2014 {item.duration_ms:.0f} ms")
+        if item.screenshot is not None and item.screenshot.path is not None:
+            # Already captured and already paid for. Saying where saves the agent asking again,
+            # which is the whole reason verify writes it down.
+            chunks.append(f"  {item.screenshot.path}")
+
+    chunks.append(_summary(result))
     return "\n".join(chunks)
+
+
+def _summary(result: Any) -> str:
+    """The closing line: everything the envelope carried, for about twenty tokens.
+
+    Cheap must not mean lossy. The envelope was dropped because 177 tokens of braces and repeated
+    keys is a bad price for it, not because the facts in it were worthless -- and the scale in
+    particular is what an agent needs the moment a coordinate lands somewhere surprising.
+    """
+    screen = result.screen
+    scale = f"scale {screen.scale:g}" if screen.scale is not None else "scale unknown"
+    where = f"screen {screen.width}x{screen.height}, {scale}"
+    state = "ok" if result.ok else f"failed at action {(result.failed_index or 0) + 1}"
+    return f"{state} — profile {result.profile}, backend {result.backend}, {where}"
 
 
 def _run(

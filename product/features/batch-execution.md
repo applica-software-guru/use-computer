@@ -3,7 +3,7 @@ title: "Batch Execution"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.1"
+version: "1.2"
 ---
 
 # Batch Execution
@@ -56,7 +56,8 @@ One line per action, numbered, so a failure is locatable without counting:
 2 type "mario@example.com" — 240 ms
 3 click button 'Invia' via the platform API — 12 ms
 4 tree — 24 nodes, 1 truncated
+ok — profile laptop, backend local, screen 1920x1080, scale 1
 ```
 
-The exit code says whether it finished; the last line printed says how far it got. `--format json`
-returns the envelope with `ok` and `failed_index` for a caller that would rather branch on fields.
+The closing line says whether it finished and, when it did not, which action stopped it. The exit
+code carries the same answer for a caller that would rather branch than read.

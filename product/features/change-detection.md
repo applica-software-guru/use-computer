@@ -3,7 +3,7 @@ title: "Change Detection"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.2"
+version: "1.3"
 ---
 
 # Change Detection
@@ -24,6 +24,21 @@ the screen actually changed:
 
 A threshold (configurable, with a sensible default) separates noise — a caret, a clock — from a
 real change.
+
+## What it prints
+
+On the action's own line, and the picture beneath it:
+
+```
+click at (200, 200) — changed 6% — 41 ms
+  /home/you/.local/share/use-computer/screenshots/20260905T093017.762Z-click.png
+
+click at (412, 260) — unchanged — 38 ms
+```
+
+**`unchanged` as a word**, not a false: it is the one an agent has to notice, because it means the
+coordinate was stale. And the path is there because the capture is already paid for — an agent that
+had to ask for it again would pay twice for one picture.
 
 ## How the agent uses it
 
