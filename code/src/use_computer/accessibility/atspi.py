@@ -208,10 +208,16 @@ class AtspiProvider:
         self._index[node_id] = obj
         children: tuple[UINode, ...] = ()
         if depth > 0:
-            children = tuple(
-                self._build(child, f"{node_id}/{index}", depth - 1)
-                for index, child in enumerate(self._children(obj))
-            )
+            built = []
+            for index, child in enumerate(self._children(obj)):
+                try:
+                    built.append(self._build(child, f"{node_id}/{index}", depth - 1))
+                except Exception:
+                    # One client that will not answer on the bus costs its own subtree, not the
+                    # whole desktop. The guard is per child, not around the loop: around it, one
+                    # failure would still take every sibling after it.
+                    continue
+            children = tuple(built)
         return UINode(
             id=node_id,
             role=roles.atspi_role(obj.get_role_name() or ""),
