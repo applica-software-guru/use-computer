@@ -43,8 +43,8 @@ def runner() -> CliRunner:
     return CliRunner()
 
 
-def invoke(runner: CliRunner, *args: str) -> CliResult:
-    return runner.invoke(app, list(args), catch_exceptions=False)
+def invoke(runner: CliRunner, *args: str, input: str | None = None) -> CliResult:
+    return runner.invoke(app, list(args), catch_exceptions=False, input=input)
 
 
 def test_the_envelope_is_json_and_nothing_else(
@@ -534,3 +534,29 @@ def test_an_unknown_scale_is_named_not_omitted(
     write_config(CONFIG)
     result = invoke(runner, "screenshot")
     assert "scale unknown" in strip_ansi(result.stdout)
+
+
+def test_a_batch_names_the_screenshot_directory_once(
+    runner: CliRunner, backend: FakeBackend, write_config: WriteConfig, tmp_path: Path
+) -> None:
+    # A path is 23 tokens, and a batch of five verified actions repeats the same directory in
+    # every one of them -- 70 tokens of it, five times what the whole closing line costs.
+    backend.colours = [(0, 0, 0), (255, 255, 255)]
+    write_config(CONFIG)
+    plan = '[{"action":"click","x":1,"y":1},{"action":"click","x":2,"y":2}]'
+    result = invoke(runner, "batch", "-", "--verify", input=plan)
+    out = strip_ansi(result.stdout)
+    assert "screenshots in " in out.split("\n")[-2]
+    for line in out.split("\n"):
+        if line.startswith("  ") and line.strip().endswith(".png"):
+            assert "/" not in line  # a filename, because the directory was already named
+
+
+def test_a_single_screenshot_keeps_its_whole_path(
+    runner: CliRunner, backend: FakeBackend, write_config: WriteConfig
+) -> None:
+    # Nothing to save with one file, and an indirection to read would cost more than it returns.
+    write_config(CONFIG)
+    result = invoke(runner, "screenshot")
+    assert strip_ansi(result.stdout).split("\n")[0].startswith("/")
+    assert "screenshots in " not in strip_ansi(result.stdout)

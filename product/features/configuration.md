@@ -3,7 +3,7 @@ title: "Configuration"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.5"
+version: "1.6"
 ---
 
 # Configuration
@@ -82,6 +82,13 @@ screenshot of somebody's desktop is not something to leave lying in a working tr
 
 Files are named by capture time and action, `20260904T103012.481Z-click.png`, so they sort and do
 not collide. They are not pruned.
+
+**The directory is named once per run, not once per file.** A path is 23 tokens, and a batch of
+five verified actions would repeat the same directory in every one of them — 70 tokens of it, five
+times what the whole closing line costs. So when a run wrote more than one screenshot to the same
+place, the action lines carry filenames and the closing line says where they are. One file keeps
+its whole path: there is nothing to save, and an indirection to read would cost more than it
+returns.
 
 ## Reading the tree
 

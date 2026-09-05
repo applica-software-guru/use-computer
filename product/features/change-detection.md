@@ -3,7 +3,7 @@ title: "Change Detection"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.3"
+version: "1.4"
 ---
 
 # Change Detection
@@ -35,6 +35,9 @@ click at (200, 200) — changed 6% — 41 ms
 
 click at (412, 260) — unchanged — 38 ms
 ```
+
+In a batch, where every capture lands in the same directory, the lines carry filenames and the
+closing line names the directory once — see [configuration.md](configuration.md).
 
 **`unchanged` as a word**, not a false: it is the one an agent has to notice, because it means the
 coordinate was stale. And the path is there because the capture is already paid for — an agent that

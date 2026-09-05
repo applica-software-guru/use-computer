@@ -276,6 +276,22 @@ def _config(
     return resolved
 
 
+def _shared_directory(result: Any) -> Path | None:
+    """The directory every screenshot in this run went to, if they share one.
+
+    A path is 23 tokens and a batch of five verified actions repeats the same directory in every
+    one of them -- 70 tokens of it, five times what the whole closing line costs. Naming it once
+    and printing filenames is the same information for a third of the price.
+    """
+    paths = [
+        item.screenshot.path
+        for item in result.results
+        if item.screenshot is not None and item.screenshot.path is not None
+    ]
+    parents = {path.parent for path in paths}
+    return parents.pop() if len(parents) == 1 and len(paths) > 1 else None
+
+
 def _text_lines(result: Any) -> str:
     """What a run says, as prose: the read, or a line per action.
 
@@ -284,6 +300,7 @@ def _text_lines(result: Any) -> str:
     and a model reads this at a third of the tokens the JSON costs.
     """
     chunks: list[str] = []
+    folder = _shared_directory(result)
     for item in result.results:
         if item.tree is not None:
             if item.tree.text:
@@ -305,7 +322,7 @@ def _text_lines(result: Any) -> str:
             # The path is the answer, and the only part of it worth any tokens.
             shot = item.screenshot
             where = f" {shot.box[2]}x{shot.box[3]} of {shot.of}" if shot.box else ""
-            chunks.append(f"{shot.path}{where}")
+            chunks.append(f"{_shorten(shot.path, folder)}{where}")
             continue
         what = item.action.action
         if item.matched is not None:
@@ -333,13 +350,20 @@ def _text_lines(result: Any) -> str:
         if item.screenshot is not None and item.screenshot.path is not None:
             # Already captured and already paid for. Saying where saves the agent asking again,
             # which is the whole reason verify writes it down.
-            chunks.append(f"  {item.screenshot.path}")
+            chunks.append(f"  {_shorten(item.screenshot.path, folder)}")
 
-    chunks.append(_summary(result))
+    chunks.append(_summary(result, folder))
     return "\n".join(chunks)
 
 
-def _summary(result: Any) -> str:
+def _shorten(path: Path | None, folder: Path | None) -> str:
+    """The filename when the directory has already been named, the whole path otherwise."""
+    if path is None:
+        return ""
+    return path.name if folder is not None and path.parent == folder else str(path)
+
+
+def _summary(result: Any, folder: Path | None = None) -> str:
     """The closing line: everything the envelope carried, for about twenty tokens.
 
     Cheap must not mean lossy. The envelope was dropped because 177 tokens of braces and repeated
@@ -350,7 +374,8 @@ def _summary(result: Any) -> str:
     scale = f"scale {screen.scale:g}" if screen.scale is not None else "scale unknown"
     where = f"screen {screen.width}x{screen.height}, {scale}"
     state = "ok" if result.ok else f"failed at action {(result.failed_index or 0) + 1}"
-    return f"{state} — profile {result.profile}, backend {result.backend}, {where}"
+    shots = f", screenshots in {folder}" if folder is not None else ""
+    return f"{state} — profile {result.profile}, backend {result.backend}, {where}{shots}"
 
 
 def _run(
