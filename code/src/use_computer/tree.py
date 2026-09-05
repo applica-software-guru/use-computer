@@ -139,6 +139,10 @@ class WindowInfo(BaseModel):
     id: str
     title: str | None = None
     role: str
+    app: str | None = Field(
+        default=None,
+        description="The application it belongs to. Without it a candidate list is unreadable.",
+    )
     pid: int | None = None
     box: Box
     active: bool = False

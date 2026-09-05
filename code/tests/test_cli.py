@@ -289,7 +289,7 @@ def test_windows_renders_too(
     result = invoke(runner, "windows")
     assert result.exit_code == EXIT_OK
     payload = json.loads(result.stdout)["results"][0]["windows"]
-    assert payload["text"].startswith('# id role "title"')
+    assert payload["text"].startswith('# id app role "title"')
     assert payload["windows"] == []
 
 

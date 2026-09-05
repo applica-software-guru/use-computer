@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # errors is imported by coordinates, which tree imports -- annotations only.
     from use_computer.compare import Screenshot
-    from use_computer.tree import UINode
+    from use_computer.tree import UINode, WindowInfo
 
 
 class UseComputerError(Exception):
@@ -112,6 +112,24 @@ class AmbiguousNodeError(UseComputerError):
         super().__init__(
             f"{len(self.candidates)} nodes match {description}; "
             "narrow the selector or pass --nth"
+        )
+
+
+class AmbiguousWindowError(UseComputerError):
+    """More than one window matches.
+
+    A terminal puts the running command in its own title, so the terminal executing
+    ``--window "X"`` contains X and matches it. Every --window typed at a shell is potentially
+    ambiguous, and the wrong answer is the window the user is looking at -- which is exactly why
+    this refuses rather than picking the first, like everything else here.
+    """
+
+    def __init__(self, wanted: str, candidates: Sequence[WindowInfo]) -> None:
+        self.wanted = wanted
+        self.candidates = tuple(candidates)
+        super().__init__(
+            f"{len(self.candidates)} windows match {wanted!r}; "
+            "use a longer title, or the window id from `windows`"
         )
 
 

@@ -52,6 +52,7 @@ from use_computer.errors import (
     ActionFailedError,
     ActionNotSupportedError,
     AmbiguousNodeError,
+    AmbiguousWindowError,
     NodeNotFoundError,
     PermissionDeniedError,
     UITreeUnavailableError,
@@ -76,6 +77,7 @@ from use_computer.tree import (
     TreeResult,
     UINode,
     Via,
+    WindowInfo,
     WindowsResult,
 )
 
@@ -123,6 +125,9 @@ class ErrorInfo(BaseModel):
     screenshot: Screenshot | None = Field(
         default=None, description="For a selector that matched nothing: the picture to look at."
     )
+    windows: tuple[WindowInfo, ...] | None = Field(
+        default=None, description="For an ambiguous window: the ones that matched."
+    )
 
     @classmethod
     def of(cls, exc: BaseException) -> ErrorInfo:
@@ -134,11 +139,15 @@ class ErrorInfo(BaseModel):
             candidates = tuple(Candidate.of(node) for node in exc.candidates)
         if isinstance(exc, NodeNotFoundError):
             screenshot = exc.screenshot
+        windows = None
+        if isinstance(exc, AmbiguousWindowError):
+            windows = tuple(w for w in exc.candidates if isinstance(w, WindowInfo))
         return cls(
             type=type(exc).__name__,
             message=str(exc),
             candidates=candidates,
             screenshot=screenshot,
+            windows=windows,
         )
 
 

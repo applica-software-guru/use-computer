@@ -18,7 +18,7 @@ from collections.abc import Iterable, Sequence
 from use_computer.tree import UINode, WindowInfo
 
 TREE_LEGEND = '# id role "name" !states [actions] x,y wxh +offscreen'
-WINDOWS_LEGEND = '# id role "title" pid x,y wxh *active'
+WINDOWS_LEGEND = '# id app role "title" pid x,y wxh *active'
 
 
 def _quote(text: str) -> str:
@@ -69,7 +69,7 @@ def windows(entries: Sequence[WindowInfo]) -> str:
     """Render a window list, in the same shape, so the two reads look alike."""
     lines = [WINDOWS_LEGEND]
     for entry in entries:
-        parts = [entry.id, entry.role]
+        parts = [entry.id, entry.app or "-", entry.role]
         if entry.title:
             parts.append(_quote(entry.title))
         parts.append(str(entry.pid) if entry.pid is not None else "-")
@@ -111,6 +111,7 @@ def windows_for_a_reader(entries: Sequence[WindowInfo]) -> str:
     rows = [
         [
             entry.id,
+            entry.app or "",
             entry.role,
             _ellipsis(entry.title or ""),
             str(entry.pid) if entry.pid is not None else "",
@@ -119,7 +120,7 @@ def windows_for_a_reader(entries: Sequence[WindowInfo]) -> str:
         ]
         for entry in entries
     ]
-    return _columns(rows, ["id", "role", "title", "pid", "box", "active"])
+    return _columns(rows, ["id", "app", "role", "title", "pid", "box", "active"])
 
 
 __all__ = [

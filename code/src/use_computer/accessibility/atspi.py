@@ -16,7 +16,11 @@ from typing import Any
 
 from use_computer.accessibility import roles
 from use_computer.accessibility.base import require
-from use_computer.errors import UITreeUnavailableError
+from use_computer.errors import (
+    AmbiguousWindowError,
+    UITreeUnavailableError,
+    UseComputerError,
+)
 from use_computer.tree import Box, TreeScope, TreeScopeKind, UINode, WindowInfo
 
 #: Where a distro puts PyGObject. The compiled part carries the Python version it was built for,
@@ -100,6 +104,21 @@ class AtspiProvider:
             raise UITreeUnavailableError(
                 "the Atspi typelib is not installed.", system=system_hint()
             ) from exc
+        # GLib talks over our stderr from inside the C library, about a stale socket it then
+        # recovers from. An agent reading stderr to understand a failure would see it immediately
+        # before output that is entirely fine. A log handler, not a redirect of fd 2: a redirect
+        # would swallow our own errors during the same window.
+        with suppress(Exception):
+            from gi.repository import GLib  # noqa: PLC0415
+
+            GLib.log_set_handler(
+                "dbind",
+                GLib.LogLevelFlags.LEVEL_MASK
+                | GLib.LogLevelFlags.FLAG_FATAL
+                | GLib.LogLevelFlags.FLAG_RECURSION,
+                lambda *_: None,
+                None,
+            )
         self._atspi = Atspi
         # Older bindings do not expose it; the default timeout then applies.
         with suppress(Exception):
@@ -111,21 +130,30 @@ class AtspiProvider:
     # --- reading -----------------------------------------------------------------------------
 
     def windows(self) -> list[WindowInfo]:
+        return [info for info, _ in self._window_pairs()]
+
+    def _window_pairs(self) -> list[tuple[WindowInfo, Any]]:
+        """Every window, with the accessible it describes, so a match can be acted on."""
         desktop = self._desktop()
-        found: list[WindowInfo] = []
+        found: list[tuple[WindowInfo, Any]] = []
         for app_index, app in enumerate(self._children(desktop)):
             try:
                 pid = self._pid(app)
+                app_name = app.get_name() or None
                 for index, window in enumerate(self._children(app)):
                     states = set(self._states(window))
                     found.append(
-                        WindowInfo(
-                            id=f"0/{app_index}/{index}",
-                            title=window.get_name() or None,
-                            role=roles.atspi_role(window.get_role_name() or ""),
-                            pid=pid if pid > 0 else None,
-                            box=self._box(window),
-                            active="active" in states or "focused" in states,
+                        (
+                            WindowInfo(
+                                id=f"0/{app_index}/{index}",
+                                title=window.get_name() or None,
+                                role=roles.atspi_role(window.get_role_name() or ""),
+                                app=app_name,
+                                pid=pid if pid > 0 else None,
+                                box=self._box(window),
+                                active="active" in states or "focused" in states,
+                            ),
+                            window,
                         )
                     )
             except Exception:
@@ -138,7 +166,9 @@ class AtspiProvider:
         try:
             root = self._root_for(scope)
             return self._build(root, "0", depth)
-        except UITreeUnavailableError:
+        except UseComputerError:
+            # Our own errors already say what to do. Relabelling one as "AT-SPI did not answer"
+            # would hide an ambiguous window behind a transport failure it has nothing to do with.
             raise
         except Exception as exc:
             # A GLib/dbind failure is not a Python error the caller can act on. Turning it into
@@ -165,6 +195,9 @@ class AtspiProvider:
         if scope.kind is TreeScopeKind.ALL:
             return desktop
 
+        if scope.kind is TreeScopeKind.TITLE and scope.value:
+            return self._window_named(scope.value)
+
         for app in self._children(desktop):
             # One unresponsive application must not cost the whole snapshot. Skipping it loses
             # that application; letting it raise loses the desktop.
@@ -173,12 +206,6 @@ class AtspiProvider:
                     continue
                 for window in self._children(app):
                     if scope.kind is TreeScopeKind.FOCUSED and self._is_active(window):
-                        return window
-                    if (
-                        scope.kind is TreeScopeKind.TITLE
-                        and scope.value
-                        and scope.value.casefold() in (window.get_name() or "").casefold()
-                    ):
                         return window
                     if scope.kind is TreeScopeKind.PID:
                         return window
@@ -193,6 +220,27 @@ class AtspiProvider:
                 "use --window all."
             )
         raise UITreeUnavailableError(f"no window matches {scope.value!r}.")
+
+    def _window_named(self, wanted: str) -> Any:
+        """Exactly one window, or an error carrying the ones that matched.
+
+        An id is exact and a title is a substring, so a value that is one is never tested as the
+        other. This matters more than it looks: a terminal puts the running command in its own
+        title, so the terminal executing `--window "X"` contains X and matches it. Picking the
+        first match would return the window the user is looking at rather than the one they named.
+        """
+        pairs = self._window_pairs()
+        exact = [pair for pair in pairs if pair[0].id == wanted]
+        if exact:
+            return exact[0][1]
+
+        folded = wanted.casefold()
+        matches = [pair for pair in pairs if folded in (pair[0].title or "").casefold()]
+        if not matches:
+            raise UITreeUnavailableError(f"no window matches {wanted!r}.")
+        if len(matches) > 1:
+            raise AmbiguousWindowError(wanted, [info for info, _ in matches])
+        return matches[0][1]
 
     def _children(self, obj: Any) -> list[Any]:
         try:

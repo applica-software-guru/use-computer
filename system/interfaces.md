@@ -3,7 +3,7 @@ title: "Interfaces"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "2.2"
+version: "2.3"
 ---
 
 # Interfaces
@@ -128,7 +128,7 @@ The `windows` field of the result. By default it carries a rendering:
 
 ```json
 {
-  "text": "# id role \"title\" pid x,y wxh *active\n0/29/0 window \"Conferma\" 4711 0,0 1920x1038 *",
+  "text": "# id app role \"title\" pid x,y wxh *active\n0/29/0 Ledger window \"Conferma\" 4711 0,0 1920x1038 *",
   "windows": []
 }
 ```
@@ -248,6 +248,10 @@ involved. With `via: "coordinate"` it carries the centre of the matched node, in
 
 `NodeNotFoundError` carries the fallback `screenshot` path, because a selector that matched nothing
 is exactly the signal to switch to vision.
+
+`AmbiguousWindowError` is the same shape for `--window`, carrying the matching windows in a
+`windows` field. It is not a rare case: a terminal puts the running command in its own title, so
+the terminal executing `--window "X"` matches X.
 
 ### Batch input JSON
 

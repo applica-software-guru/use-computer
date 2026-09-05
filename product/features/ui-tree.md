@@ -3,7 +3,7 @@ title: "UI Tree"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "3.1"
+version: "3.2"
 ---
 
 # UI Tree
@@ -59,10 +59,32 @@ values rather than thousands, and burying them in prose would be the same mistak
 The cheapest question is "what is open?", and it should not cost a tree.
 
 ```
-# id role "title" pid x,y wxh *active
-0/29/0 window "Conferma" 4711 0,0 1920x1038 *
-0/33/0 window "Posta" 5210 331,130 1152x784
+# id app role "title" pid x,y wxh *active
+0/29/0 Ledger window "Conferma" 4711 0,0 1920x1038 *
+0/33/0 TelegramDesktop panel "Roberto Conterosito" 5210 331,130 1152x784
 ```
+
+**The application is reported**, because a title alone does not tell you whose window it is —
+`0/33/0` is only recognisable as Telegram if something says so.
+
+## `--window` refuses to guess, like everything else
+
+A title is matched as a substring, so more than one window can match. That is an error carrying the
+candidates, not a first match:
+
+```
+AmbiguousWindowError: 2 windows match 'ChatGPT'; use a longer title, or the window id from `windows`
+  0/34/0 Codex 'ChatGPT' at (0, 0)
+  0/34/1 Codex 'ChatGPT' at (1469, -86)
+```
+
+This is not a rare case. **A terminal puts the running command in its own title**, so the terminal
+executing `--window "X"` contains X and matches it — every `--window` typed at a shell is
+potentially ambiguous, and the first match is usually the window the user is looking at rather than
+the one they named.
+
+`--window` therefore also accepts a **window id** from `windows`, matched exactly and tested before
+any title, which is the reliable way out of an ambiguity.
 
 Twelve windows measured at **1,429 bytes** — less than a fifteenth of a single window's tree. It
 yields the `--window` value every later call needs, and `active` says which one `focused` resolves

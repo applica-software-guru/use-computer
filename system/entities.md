@@ -3,7 +3,7 @@ title: "Entities"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "2.1"
+version: "2.2"
 ---
 
 # Entities
@@ -77,8 +77,12 @@ populated under `--format json`. Symmetrical with `TreeResult`, so the two reads
 
 ### WindowInfo *(frozen)*
 
-One entry of what `windows` returns: `id`, `title: str | None`, `role`, `pid: int | None`,
-`box: Box`, `active: bool`.
+One entry of what `windows` returns: `id`, `title: str | None`, `role`, `app: str | None`,
+`pid: int | None`, `box: Box`, `active: bool`.
+
+`app` is the application the window belongs to. Without it a candidate list is unreadable: two
+windows both titled "ChatGPT" are told apart by what they belong to, not by the title that made
+them ambiguous.
 
 `pid` lives here and on nothing else. A window list is where it is worth its bytes; on every node
 of a tree it is repetition.
@@ -189,6 +193,7 @@ each field, the **layer** it came from — which is what `config show` prints.
 scale), `KeySyntaxError`, `ConfigError`, `ActionFailedError`,
 `UITreeUnavailableError` (no provider — names both the extra and, on Linux, the system package),
 `NodeNotFoundError` (nothing matched), `AmbiguousNodeError` (carries the candidates),
+`AmbiguousWindowError` (carries the matching `WindowInfo`s),
 `ActionNotSupportedError` (names the actions the matched node does support).
 
 ## Agent Notes

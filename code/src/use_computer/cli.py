@@ -362,6 +362,15 @@ def _run(
                         x=candidate.box.x,
                         y=candidate.box.y,
                     )
+                for window in item.error.windows or ():
+                    _say(
+                        "  [dim]{node}[/dim] {app} {title} at ({x}, {y})",
+                        node=window.id,
+                        app=window.app or window.role,
+                        title=repr(window.title) if window.title else "",
+                        x=window.box.x,
+                        y=window.box.y,
+                    )
                 if item.error.screenshot is not None:
                     _say(
                         "  [dim]screenshot: {path}[/dim]",

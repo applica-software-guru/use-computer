@@ -45,10 +45,11 @@ def test_a_name_never_breaks_the_line() -> None:
 def test_windows_render_with_a_marker_on_the_active_one() -> None:
     box = Box(x=0, y=0, width=1920, height=1038)
     entries = [
-        WindowInfo(id="0/1", title="Conferma", role="window", pid=4711, box=box, active=True),
+        WindowInfo(id="0/1", title="Conferma", role="window", app="Posta", pid=4711, box=box,
+                   active=True),
         WindowInfo(id="0/2", title=None, role="window", pid=None, box=box, active=False),
     ]
     lines = render.windows(entries).split("\n")
     assert lines[0] == render.WINDOWS_LEGEND
-    assert lines[1] == '0/1 window "Conferma" 4711 0,0 1920x1038 *'
-    assert lines[2] == "0/2 window - 0,0 1920x1038"  # no title, no pid, not active
+    assert lines[1] == '0/1 Posta window "Conferma" 4711 0,0 1920x1038 *'
+    assert lines[2] == "0/2 - window - 0,0 1920x1038"  # no app, no title, no pid, not active

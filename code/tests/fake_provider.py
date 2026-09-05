@@ -105,6 +105,7 @@ class FakeProvider:
                 id="0",
                 title=self.root.name,
                 role=self.root.role,
+                app="Fake App",
                 pid=4711,
                 box=self.root.box,
                 active=True,

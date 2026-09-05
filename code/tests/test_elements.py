@@ -328,7 +328,7 @@ def test_windows_lists_what_is_open() -> None:
     assert item.ok
     assert item.windows is not None
     assert item.windows.text is not None
-    assert '0 dialog "Conferma" 4711' in item.windows.text
+    assert '0 Fake App dialog "Conferma" 4711' in item.windows.text
     assert item.windows.text.endswith("*")  # the active one is marked
 
 
@@ -448,3 +448,24 @@ def test_windows_lists_objects_when_asked() -> None:
     assert result.windows.text is None
     assert [w.title for w in result.windows.windows] == ["Conferma"]
     assert result.windows.windows[0].pid == 4711
+
+
+def test_an_ambiguous_window_refuses_and_names_the_applications() -> None:
+    # A terminal puts the running command in its own title, so the terminal executing
+    # `--window "X"` matches X. Picking the first would return the window the user is looking at
+    # rather than the one they named.
+    from use_computer.errors import AmbiguousWindowError
+    from use_computer.tree import Box, WindowInfo
+
+    box = Box(x=0, y=0, width=10, height=10)
+    error = AmbiguousWindowError(
+        "Report",
+        [
+            WindowInfo(id="0/1/0", title="Report", role="window", app="Ledger", box=box),
+            WindowInfo(id="0/9/0", title='use-computer --window "Report"', role="window",
+                       app="Terminal", box=box),
+        ],
+    )
+    assert "2 windows match 'Report'" in str(error)
+    assert "window id from `windows`" in str(error)
+    assert [w.app for w in error.candidates] == ["Ledger", "Terminal"]
