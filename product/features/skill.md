@@ -3,7 +3,7 @@ title: "Agent Skill"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "2.0"
+version: "3.0"
 ---
 
 # Agent Skill
@@ -17,6 +17,28 @@ the installed version. So the skill ships **inside the package** and is installe
 root. A file at the repository root does not ship in the wheel, and a skill that is not in the
 wheel does not exist for anyone who installed from PyPI. CI verifies its presence in the built
 wheel before release.
+
+## What it is for
+
+`--help` lists the flags. What it cannot say is **which of two ways to look**, and that is the
+skill's job:
+
+- **Structure** — the OS says there is a button called "Invia", enabled, at a box, and pressable.
+  Exact, cheap, addressable by name, and it reaches things that are not drawn at all.
+- **Pixels** — a picture says what is actually rendered: a placeholder an application paints
+  rather than exposes, an icon with no name.
+
+Neither subsumes the other. The skill's spine is a table of what each knows and what each is blind
+to, and the traffic between them: which error means *go and look*, and how to look at one node
+instead of the screen.
+
+Enumerating the surface would produce a second `--help`, longer than the first, that still would
+not say when to stop reading the tree. So it names the commands and the flags that carry a
+**judgement** — `--via` above all, which chooses the rung — and points at `--help` for the rest.
+
+**A test asserts the skill's claims are real**, not that it is complete: every flag and command it
+mentions must exist. That is the direction that matters. A skill telling an agent to pass a removed
+flag is actively harmful; one that omits `collapse` is merely thin, and `--help` covers thin.
 
 ## What it teaches
 

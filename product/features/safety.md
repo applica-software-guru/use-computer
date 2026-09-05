@@ -3,7 +3,7 @@ title: "Safety"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.2"
+version: "1.3"
 ---
 
 # Safety
@@ -46,6 +46,20 @@ a click, not safer:
   work; if a toolkit requires focus, the error says so.
 - On macOS the accessibility API will act on an application that is **not frontmost**. That is a
   genuine advantage and a genuine footgun: nothing visibly comes forward when it happens.
+
+## The one command that deletes
+
+`prune` removes screenshots, so it is the only command here that destroys anything. It is safe by
+construction rather than by warning:
+
+- it removes only files matching the **names this tool writes**, never everything in the directory;
+- it never removes the directory itself;
+- it counts what it left alone, out loud, because silence would look like deletion;
+- `--dry-run` says what would go and removes nothing, like everywhere else.
+
+There is no flag that makes it delete something it does not recognise. `screenshot-dir` is
+configurable, and a `prune` that emptied whatever it pointed at would be a footgun the first time
+somebody aimed it at their Pictures folder.
 
 ## Permission errors
 

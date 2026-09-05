@@ -3,7 +3,7 @@ title: "Interfaces"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "3.0"
+version: "3.1"
 ---
 
 # Interfaces
@@ -59,6 +59,7 @@ to `auto`. `--name` matches a case-insensitive substring unless `--exact`.
 ### Other commands
 
 ```
+use-computer prune  [--keep N] [--dry-run]
 use-computer batch  (PATH | -)  [--continue-on-error]
 use-computer config init [--backend local|vnc] [--profile NAME]
                          [--host HOST] [--port PORT] [--allow-local]
@@ -287,6 +288,17 @@ An element-addressed batch, carrying no coordinates at all:
 Selector fields are flat in the batch JSON — `role`, `name`, `id`, `exact`, `nth`, `window`, `via`
 — and are collected into a `NodeSelector` by the model validator, so the file reads the way the CLI
 flags do.
+
+### `prune`
+
+One line, like everything else:
+
+```
+removed 34 screenshots (12.4 MB) from /work/.use-computer/screens, kept 20, left 1 file this tool did not write
+```
+
+It removes only files matching the names the tool writes, never the directory, and reports what it
+left alone. Exit `0` even when there was nothing to remove: an empty directory is not a failure.
 
 ### `config init` JSON
 

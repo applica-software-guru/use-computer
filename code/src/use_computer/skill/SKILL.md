@@ -2,7 +2,7 @@
 name: use-computer
 description: Read and act on a GUI — the accessibility tree of what is on screen (roles, names, clickable boxes), then click, focus, toggle, expand, select, set a value, type, press keys, drag, scroll, screenshot. Locally or over VNC. Ask the tree first and use ui-locator's pixel coordinates only when the tree cannot see the element.
 x-skill-id: use-computer
-x-skill-version: "3"
+x-skill-version: "4"
 ---
 
 # use-computer
@@ -11,7 +11,37 @@ You read and act on a screen through the `use-computer` CLI. It reads the access
 operating system already maintains, and it moves a real pointer and types real keystrokes. It does
 not decide *what* to do — you do.
 
-## Start here: the ladder
+## Two ways to know what is on the screen
+
+They fail in different places, and choosing between them is most of using this tool well.
+
+| | **Structure** (`tree`) | **Pixels** (`screenshot`) |
+| --- | --- | --- |
+| Tells you | roles, names, states, boxes, what is operable | what is *drawn*: painted text, icons, colour, layout |
+| Reaches | things not on screen — a closed menu's items | only what is visible |
+| Costs | a few hundred tokens | an image, and a vision pass |
+| Blind to | anything an app paints instead of exposing | node ids, `enabled`, everything off screen |
+| Acts by | name or id, **with no coordinates at all** | a coordinate you have to aim |
+
+Structure first, always: it is cheaper and it is exact. Go to pixels when structure cannot answer,
+and when you do, **crop to the node** rather than photographing the screen.
+
+### How to move between them
+
+- `reason: unavailable` or `empty` — this application exposes nothing (Qt, Electron, canvas, games
+  do this). A screenshot is already attached to that answer. Go and look.
+- A selector matched nothing — same, and for the same reason. Do not try more selectors.
+- **The tree sees a node but cannot name it.** Two anonymous text fields, say. Do *not* photograph
+  the screen: `screenshot --of <id>` crops to that node. The tree knows exactly *where*; only
+  *what* is missing.
+- Before reaching for pixels at all, two things are usually enough:
+  - **Geometry**, which is already in the tree. A message box is wide and at the bottom; a search
+    box is narrow and near the top. A label sitting to the left of a field, on the same line, names
+    it.
+  - **Focus.** Click one of two identical fields, re-read the tree, and see which now says
+    `!focused`.
+
+## The ladder
 
 Take the highest rung you can reach. Each one is cheaper, faster and more accurate than the one
 below it.
@@ -39,6 +69,13 @@ that still resolves.
 
 `--format json` returns a JSON envelope instead. You almost never want it: the same answers cost
 three times the tokens, and 177 of those go on the envelope before anything is said.
+
+Every run ends with one line saying whether it worked, which profile and backend answered, the
+screen and the **scale** — `scale unknown` means coordinate conversion will refuse, and is worth
+noticing.
+
+`use-computer <command> --help` lists every flag. This document covers the ones that carry a
+judgement; `--help` covers the rest.
 
 Always pass `--use <profile>` unless a default profile is configured.
 
@@ -168,8 +205,20 @@ use-computer select --role listitem --name "Italia"
 use-computer show-menu --id 0/1/4
 ```
 
-`--name` is a case-insensitive substring; add `--exact` for equality. `--window` takes
-`focused` (default), `all`, a window title, or `@1234` for a pid.
+`--name` is a case-insensitive substring; add `--exact` for equality, and `--nth N` to pick when
+several match. `--window` takes `focused` (default), `all`, a window title, a window **id**, or
+`@1234` for a pid. `collapse` closes what `expand` opened.
+
+**`--via` chooses which rung**, and is the one flag worth understanding:
+
+- `--via auto` (default) — the platform API if the node supports it, otherwise a click at its
+  centre. Almost always right.
+- `--via action` — refuse rather than fall back. Use it when a coordinate click would be wrong,
+  and note it **works even when the scale is unknown**, because it involves no coordinates.
+- `--via coordinate` — resolve the element, then click it with a real pointer. For interfaces that
+  only respond to genuine input: hover states, drag handles, canvases.
+
+`--delay SECONDS` waits after each action, for an application that needs a moment to catch up.
 
 **Pass `--id` together with `--role` and `--name`** as they came out of `tree`. The id alone is
 just a path, and paths shift when a row is inserted above; with the role and name it is checked,
@@ -278,6 +327,20 @@ follow a verified action with a `screenshot` call. That is the round trip verify
 
 Verification costs two screenshots per action, so use it on the actions whose effect you need
 to confirm, not on every one.
+
+## Where the pictures go, and getting rid of them
+
+Inside the project, in `.use-computer/screens/`, which the tool keeps out of git for you. Without a
+project, the XDG data directory. A run names the directory once and then just filenames.
+
+```bash
+use-computer prune                # remove them
+use-computer prune --dry-run      # say what would go
+use-computer prune --keep 20      # leave the most recent 20
+```
+
+`prune` only ever removes files this tool wrote, and never the directory. Anything else in there is
+counted and left alone.
 
 ## Before you act on something risky
 

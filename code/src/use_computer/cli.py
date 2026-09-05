@@ -48,10 +48,16 @@ from use_computer.actions import (
     TypeAction,
     WindowsAction,
 )
-from use_computer.config import ResolvedConfig, profile_env_var, write_initial_config
+from use_computer.config import (
+    ResolvedConfig,
+    default_screenshot_dir,
+    profile_env_var,
+    write_initial_config,
+)
 from use_computer.config import load as load_config
 from use_computer.coordinates import CoordinateSpace
 from use_computer.errors import UseComputerError
+from use_computer.prune import prune as prune_screenshots
 from use_computer.runner import Session, as_json
 from use_computer.skill import Scope
 from use_computer.skill import install as skill_install
@@ -805,6 +811,24 @@ app.command("show-menu")(
 
 
 @app.command()
+def prune(
+    keep: Annotated[int, typer.Option("--keep", help="Leave the most recent N.")] = 0,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Say what would go; remove nothing.")
+    ] = False,
+    use: UseOption = None,
+    verbose: VerboseOption = 0,
+) -> None:
+    """Remove the screenshots this tool wrote. Only those, and never the directory."""
+    config = _config(use, verbose=verbose)
+    settings = config.settings
+    directory = settings.screenshot_dir or default_screenshot_dir()
+    result = prune_screenshots(directory, keep=keep, dry_run=dry_run)
+    sys.stdout.write(result.describe() + "\n")
+    raise typer.Exit(EXIT_OK)
+
+
+@app.command()
 def batch(
     source: Annotated[str, typer.Argument(metavar="PATH|-", help="JSON array of actions, or -.")],
     continue_on_error: Annotated[
@@ -1128,6 +1152,7 @@ _COMMANDS = frozenset(
         "type",
         "key",
         "screenshot",
+        "prune",
         "tree",
         "windows",
         "focus",

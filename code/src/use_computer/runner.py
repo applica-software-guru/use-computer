@@ -41,10 +41,12 @@ from use_computer.actions import (
 from use_computer.backends import Backend, create_backend
 from use_computer.compare import ChangeReport, Screenshot, compare, crop
 from use_computer.config import (
+    PROJECT_DIR,
     BackendProfile,
     ResolvedConfig,
     Settings,
     default_screenshot_dir,
+    ensure_gitignore,
 )
 from use_computer.config import load as load_config
 from use_computer.coordinates import Coordinate, ScreenInfo
@@ -658,7 +660,9 @@ class Session:
         return crop(shot, (left, top, width, height), node_id)
 
     def _screenshot_path(self, label: str) -> Path:
-        """A name that sorts and does not collide."""
+        """A name that sorts and does not collide -- and which `prune` recognises as ours."""
+        if self._screenshot_dir.parent.name == PROJECT_DIR:
+            ensure_gitignore(self._screenshot_dir.parent)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%f")[:-3] + "Z"
         return self._screenshot_dir / f"{stamp}-{label}.png"
 

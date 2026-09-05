@@ -215,13 +215,48 @@ def xdg_data_dir() -> Path:
     return (Path(base) if base else Path.home() / ".local" / "share") / "use-computer"
 
 
+#: Files the tool writes into its own directory that must not be committed. It has always been
+#: documented that `.env` is gitignored and nothing ever made it so.
+GITIGNORE_LINES = ("# written by use-computer", ".env", "screens/")
+
+SCREENS_DIR = "screens"
+
+
 def default_screenshot_dir() -> Path:
     """Where screenshots land when nothing said otherwise.
 
-    The XDG *data* directory: a screenshot of somebody's desktop is not disposable like a cache,
-    and it does not belong in a working tree.
+    Beside the work that produced them when there is a project -- easy to open, easy to throw
+    away, and separate from another project's. Under `.use-computer/` rather than a second hidden
+    directory at the root, because the tool already owns that one.
+
+    Without a project, the XDG *data* directory: a screenshot of somebody's desktop is not
+    disposable like a cache.
     """
+    root = find_project_root()
+    if root is not None:
+        return root / PROJECT_DIR / SCREENS_DIR
     return xdg_data_dir() / "screenshots"
+
+
+def ensure_gitignore(project_dir: Path) -> None:
+    """Keep the tool's own directory out of a commit.
+
+    A screenshot here is the whole desktop -- open conversations, mail, whatever is on it -- and in
+    a working tree one ``git add -A`` commits it. That objection is the reason the docs used to
+    forbid this outright, so the answer travels with the change rather than being left as a note.
+
+    Only ever this directory. Editing the project's own `.gitignore` is the user's business, not a
+    side effect of taking a picture.
+    """
+    path = project_dir / ".gitignore"
+    if path.exists():
+        return
+    try:
+        project_dir.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(GITIGNORE_LINES) + "\n", encoding="utf-8")
+    except OSError:
+        # Not being able to write it must never stop a screenshot being taken.
+        return
 
 
 def env_var_for(field: str) -> str:

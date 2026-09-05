@@ -173,12 +173,19 @@ def test_a_profile_field_default_is_reported_like_any_other(write_config: WriteC
     }
 
 
-def test_the_screenshot_directory_defaults_to_the_xdg_data_dir(
-    monkeypatch: pytest.MonkeyPatch,
+def test_without_a_project_the_screenshots_go_to_the_xdg_data_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # Never a cache directory: a screenshot of somebody's desktop is not disposable.
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_DATA_HOME", "/somewhere/data")
     assert default_screenshot_dir() == Path("/somewhere/data/use-computer/screenshots")
+
+
+def test_inside_a_project_they_go_beside_the_config(project: Path) -> None:
+    # Beside the work that produced them, and under the directory this tool already owns rather
+    # than a second hidden one at the root.
+    assert default_screenshot_dir() == project / ".use-computer" / "screens"
 
 
 def test_the_screenshot_directory_is_configurable_like_anything_else(

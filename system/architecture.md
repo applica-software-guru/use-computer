@@ -3,7 +3,7 @@ title: "Architecture"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.5"
+version: "1.6"
 ---
 
 # Architecture
@@ -24,7 +24,8 @@ config.py         project-root discovery, layered settings, config show
 tree.py           pure: UINode, Box, TreeScope, TreeResult, NodeSelector, Via
 selectors.py      pure: match a NodeSelector against a tree, prune, budget, clamp text,
                   keep notable states, count what is off screen instead of expanding it
-render.py         pure: one line per node with a legend, plus the --human views
+render.py         pure: one line per node with a legend, plus the column views
+prune.py          pure: which files are ours, and removing them
 backends/
   base.py         the Protocol + BackendNotAvailableError
   local.py        pynput + mss          (extra: local)
@@ -82,8 +83,9 @@ Protocol.
 ## Configuration resolution
 
 The project root is found by walking up from the current directory the way git finds its own,
-looking for a `.use-computer` directory holding a committed `config.toml` and a gitignored
-`.env`, with XDG config/data fallbacks — never a cache directory.
+looking for a `.use-computer` directory holding a committed `config.toml`, a gitignored `.env`,
+the `screens/` screenshots go to, and a `.gitignore` the tool writes to keep the last two out of a
+commit — described since the beginning and, until now, never actually written, with XDG config/data fallbacks — never a cache directory.
 
 Layers resolve highest to lowest: CLI flags → environment (`USE_COMPUTER_` prefix) → `.env` →
 selected profile → top-level config keys → global config → field defaults. Each resolved value

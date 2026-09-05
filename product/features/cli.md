@@ -3,7 +3,7 @@ title: "CLI"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "2.1"
+version: "2.2"
 ---
 
 # CLI
@@ -25,6 +25,7 @@ use-computer tree --format json --use laptop
 use-computer click --role button --name "Invia" --use laptop
 use-computer set-value --id 0/2/1 --value "mario@example.com" --use laptop
 use-computer batch actions.json --use staging
+use-computer prune --keep 20
 use-computer config init
 use-computer config show
 use-computer skill install --scope project

@@ -3,7 +3,7 @@ title: "Configuration"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.6"
+version: "2.0"
 ---
 
 # Configuration
@@ -76,12 +76,51 @@ A profile is selected with `--use`, falling back to `default-profile`.
 ## Where screenshots go
 
 `screenshot-dir` sets the directory screenshots are written to when no explicit path was given. It
-resolves through the same layers as everything else and defaults to the XDG **data** directory,
-`use-computer/screenshots` — never a cache directory, and never inside the repository, because a
-screenshot of somebody's desktop is not something to leave lying in a working tree.
+resolves through the same layers as everything else and defaults to **`.use-computer/screens/`**
+when a project root exists, and to the XDG **data** directory otherwise — never a cache directory,
+because a screenshot of somebody's desktop is not disposable.
+
+Beside the work that produced them: easy to open, easy to throw away, and separate from another
+project's. Under `.use-computer/` rather than a second hidden directory at the root, because the
+tool already owns that one — it sits next to `config.toml` and `.env`, where somebody already looks
+for this tool's things.
+
+**This used to be forbidden, for a reason that has not gone away.** A capture is the whole desktop —
+open conversations, mail, whatever is on the screen — and in a working tree one `git add -A`
+commits it. So the answer travels with the setting rather than being left as a warning:
+`.use-computer/.gitignore` is written when the directory is created, containing `.env` and
+`screens/`. It also closes a gap that predates all of this — `.env` has been *described* as
+gitignored since the beginning and nothing ever made it so.
+
+The tool never touches a `.gitignore` outside its own directory, and never overwrites one that
+already exists. Editing the project's is the user's business, not a side effect of taking a
+picture.
 
 Files are named by capture time and action, `20260904T103012.481Z-click.png`, so they sort and do
-not collide. They are not pruned.
+not collide.
+
+## Getting rid of them
+
+```bash
+use-computer prune                # remove them
+use-computer prune --dry-run      # say what would go, remove nothing
+use-computer prune --keep 20      # leave the most recent 20
+```
+
+```
+removed 34 screenshots (12.4 MB) from /work/.use-computer/screens, left 1 file this tool did not write
+```
+
+**It removes only files it recognises as its own** — the timestamped names it writes — and never
+the directory itself. That is the whole safety of the command: `screenshot-dir` is configurable,
+and the first person to point it at their Pictures folder must not lose anything. Anything else in
+there is counted out loud, because silence would look like it had been deleted.
+
+`--keep N` keeps the most recent N by the timestamp **in the name**, not by the filesystem: the
+name is the record, which is why it was made to sort.
+
+There is deliberately **no automatic pruning**. A cap that quietly deleted the screenshot an agent
+was about to read would be a worse bug than a directory that grows.
 
 **The directory is named once per run, not once per file.** A path is 23 tokens, and a batch of
 five verified actions would repeat the same directory in every one of them — 70 tokens of it, five
