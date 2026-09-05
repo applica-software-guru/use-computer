@@ -371,3 +371,45 @@ def test_a_missing_required_option_exits_2_and_names_the_flag(
     result = invoke(runner, *argv)
     assert result.exit_code == EXIT_USAGE
     assert flag in strip_ansi(result.stderr)
+
+
+def test_an_error_message_keeps_its_brackets(
+    runner: CliRunner, write_config: WriteConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # rich parses [...] as markup, so an error naming `use-computer-cli[tree]` silently lost the
+    # extra it exists to name. Assert on a message that contains brackets: one that does not
+    # proves nothing.
+    from use_computer.errors import UITreeUnavailableError
+
+    def refuse(profile: object) -> object:
+        raise UITreeUnavailableError("needs 'gi'.", extra="tree")
+
+    write_config(CONFIG)
+    monkeypatch.setattr("use_computer.runner.create_backend", refuse)
+    result = invoke(runner, "windows")
+    assert result.exit_code == EXIT_FAILURE
+    assert 'use-computer-cli[tree]' in strip_ansi(result.stderr)
+
+
+def test_a_candidate_name_keeps_its_brackets(
+    runner: CliRunner, backend: FakeBackend, write_config: WriteConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tests.fake_provider import FakeProvider, node
+
+    root = node(
+        "0",
+        "window",
+        "App",
+        children=(
+            node("0/0", "button", "[draft] Send", box=(0, 0, 10, 10)),
+            node("0/1", "button", "[draft] Save", box=(0, 20, 10, 10)),
+        ),
+    )
+    monkeypatch.setattr(
+        "use_computer.runner.create_provider", lambda backend: FakeProvider(root=root)
+    )
+    write_config(CONFIG)
+    result = invoke(runner, "click", "--role", "button")
+    assert result.exit_code == EXIT_FAILURE
+    assert "[draft] Send" in strip_ansi(result.stderr)

@@ -21,6 +21,7 @@ from typing import Annotated, Any, NoReturn
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 
 from use_computer.actions import (
     Action,
@@ -160,7 +161,7 @@ def _required(value: Any, flag: str) -> Any:
     the same mistake as the undeclared `click` import.
     """
     if value is None:
-        _err.print(f"[red]error:[/red] {flag} is required")
+        _say("[red]error:[/red] {flag} is required", flag=flag)
         raise typer.Exit(EXIT_USAGE)
     return value
 
@@ -222,6 +223,19 @@ def _require_selector(
     return selector
 
 
+def _say(template: str, **values: Any) -> None:
+    """Print a diagnostic, with every interpolated value escaped.
+
+    rich parses ``[...]`` as markup, so a message carrying ``[tree]`` -- the extra it exists to
+    name -- loses it silently, and a window titled ``[draft] Report`` loses its brackets in a
+    candidate list. Styling is ours and stays markup; values are data and are printed literally.
+
+    The project already refuses to put JSON through rich for the same class of reason. This is
+    that rule applied to the other thing rich is handed.
+    """
+    _err.print(template.format(**{key: escape(str(value)) for key, value in values.items()}))
+
+
 def _emit(payload: Any) -> None:
     """stdout is JSON and nothing else."""
     sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -229,7 +243,7 @@ def _emit(payload: Any) -> None:
 
 
 def _fail(exc: BaseException) -> NoReturn:
-    _err.print(f"[red]error:[/red] {exc}")
+    _say("[red]error:[/red] {exc}", exc=exc)
     raise typer.Exit(EXIT_FAILURE)
 
 
@@ -252,9 +266,9 @@ def _config(
     }
     resolved = load_config(overrides, profile=profile)
     for warning in resolved.warnings:
-        _err.print(f"[yellow]warning:[/yellow] {warning}")
+        _say("[yellow]warning:[/yellow] {warning}", warning=warning)
     if verbose:
-        _err.print(f"[dim]profile: {resolved.profile_name}[/dim]")
+        _say("[dim]profile: {profile}[/dim]", profile=resolved.profile_name)
     return resolved
 
 
@@ -274,15 +288,27 @@ def _run(actions: Sequence[Action], config: ResolvedConfig, verbose: int = 0) ->
     if not result.ok:
         for item in result.results:
             if item.error is not None:
-                _err.print(f"[red]{item.error.type}:[/red] {item.error.message}")
+                _say(
+                    "[red]{kind}:[/red] {message}",
+                    kind=item.error.type,
+                    message=item.error.message,
+                )
                 for candidate in item.error.candidates or ():
-                    name = f" {candidate.name!r}" if candidate.name else ""
-                    _err.print(
-                        f"  [dim]{candidate.id}[/dim] {candidate.role}{name} "
-                        f"at ({candidate.box.x}, {candidate.box.y})"
+                    # A window titled "[draft] Report" or a button named "[x]" would lose its
+                    # brackets here, in the very list an agent uses to choose between them.
+                    _say(
+                        "  [dim]{node}[/dim] {role}{name} at ({x}, {y})",
+                        node=candidate.id,
+                        role=candidate.role,
+                        name=f" {candidate.name!r}" if candidate.name else "",
+                        x=candidate.box.x,
+                        y=candidate.box.y,
                     )
                 if item.error.screenshot is not None:
-                    _err.print(f"  [dim]screenshot: {item.error.screenshot.path}[/dim]")
+                    _say(
+                        "  [dim]screenshot: {path}[/dim]",
+                        path=item.error.screenshot.path,
+                    )
         raise typer.Exit(EXIT_FAILURE)
     if verbose:
         _err.print(f"[green]ok[/green] {len(result.results)} action(s)")
@@ -641,7 +667,11 @@ def batch(
     try:
         actions = ActionListAdapter.validate_json(raw)
     except Exception as exc:
-        _err.print(f"[red]error:[/red] {source} is not a valid action list: {exc}")
+        _say(
+            "[red]error:[/red] {source} is not a valid action list: {exc}",
+            source=source,
+            exc=exc,
+        )
         raise typer.Exit(EXIT_USAGE) from exc
     config = _config(
         use,
@@ -660,7 +690,7 @@ def _read_file(source: str) -> str:
     try:
         return path.read_text(encoding="utf-8")
     except OSError as exc:
-        _err.print(f"[red]error:[/red] cannot read {source}: {exc}")
+        _say("[red]error:[/red] cannot read {source}: {exc}", source=source, exc=exc)
         raise typer.Exit(EXIT_USAGE) from exc
 
 
@@ -745,8 +775,11 @@ def config_init(
     payload["probe"] = probe
     _emit(payload)
     if not probe["ok"]:
-        _err.print(f"[red]probe failed:[/red] {probe['error']}")
-        _err.print(f"[dim]{config_path} was written; correct it and try again.[/dim]")
+        _say("[red]probe failed:[/red] {error}", error=probe["error"])
+        _say(
+            "[dim]{path} was written; correct it and try again.[/dim]",
+            path=config_path,
+        )
         raise typer.Exit(EXIT_FAILURE)
     _report_next_steps(kind, profile_name, env_path is None)
     raise typer.Exit(EXIT_OK)
@@ -810,7 +843,11 @@ def _prompt_backend() -> BackendKind:
         ).strip().lower()
         if answer in choices:
             return BackendKind(answer)
-        _err.print(f"[red]{answer!r} is not a backend.[/red] Choose one of: {', '.join(choices)}")
+        _say(
+            "[red]{answer} is not a backend.[/red] Choose one of: {choices}",
+            answer=repr(answer),
+            choices=", ".join(choices),
+        )
 
 
 def _probe(root: Path, profile: str) -> dict[str, Any]:
@@ -849,7 +886,7 @@ def _report_next_steps(kind: BackendKind, profile: str, needs_password: bool) ->
             f"[dim]If the server needs a password, set "
             f"{profile_env_var(profile, 'password')} or put it in .use-computer/.env[/dim]"
         )
-    _err.print(f"[green]ready[/green] try: use-computer screenshot --use {profile}")
+    _say("[green]ready[/green] try: use-computer screenshot --use {profile}", profile=profile)
 
 
 @config_app.command("show")
