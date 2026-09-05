@@ -3,7 +3,7 @@ title: "Configuration"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.3"
+version: "1.4"
 ---
 
 # Configuration
@@ -91,10 +91,16 @@ Three settings bound what `tree` returns, resolved through the same layers as ev
 | --- | --- | --- |
 | `tree-max-nodes` | `400` | The node budget. Beyond it the tree is truncated and says so. |
 | `tree-depth` | `20` | Maximum depth from the scope root. |
+| `tree-max-text` | `200` | Longest `name` or `value` a node reports. |
 | `tree-fallback` | `true` | Capture a screenshot when the tree cannot answer. |
 
-The budget is the setting that matters. It exists for the same reason base64 screenshots were
-removed: an unpruned desktop tree poured into an agent's context is expensive and looks useful.
+These exist for the same reason base64 screenshots were removed: a tree poured into an agent's
+context is expensive and looks useful.
+
+**Two budgets, because nodes are the wrong unit on their own.** A terminal or an editor reports its
+entire buffer as one node's `value` — thirteen kilobytes from a single node defeats a budget of
+four hundred. `tree-max-text` bounds what each node carries; `tree-max-nodes` bounds how many there
+are. A `name` and a `value` identify an element, they are not a way to read its contents.
 
 ## Precedence
 

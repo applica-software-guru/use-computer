@@ -8,6 +8,7 @@ from tests.fake_provider import dialog, node
 from use_computer.errors import AmbiguousNodeError, NodeNotFoundError
 from use_computer.selectors import (
     budget,
+    clamp_text,
     count,
     find,
     is_interesting,
@@ -122,3 +123,31 @@ def test_an_id_whose_role_moved_says_the_tree_moved() -> None:
         resolve_one(dialog(), NodeSelector(node_id="0/1/0", role="checkbox"))
     assert "the tree moved" in str(caught.value)
     assert "button 'Invia'" in str(caught.value)
+
+
+def test_clamp_text_bounds_what_a_node_carries_into_the_context() -> None:
+    # The node budget counts nodes, which is the wrong unit: one terminal reports its whole
+    # buffer as a single value, and 13 KB from one node defeats a budget of four hundred.
+    tree = node(
+        "0",
+        "window",
+        "App",
+        children=(node("0/0", "terminal", "Terminal", value="x" * 5000, actions=("focus",)),),
+    )
+    clamped = clamp_text(tree, 200)
+    child = clamped.children[0]
+    assert child.value is not None
+    assert len(child.value) == 201  # 200 plus the marker that says it was cut
+    assert child.value.endswith("…")
+
+
+def test_clamp_text_leaves_short_text_exactly_as_it_was() -> None:
+    clamped = clamp_text(node("0", "button", "Invia"), 200)
+    assert clamped.name == "Invia"
+
+
+def test_matching_sees_the_full_name_not_the_clamped_one() -> None:
+    # Clamping is applied on the way out. A selector must still be able to name a long label.
+    long_name = "Conferma " + "molto " * 60 + "lungo"
+    tree = node("0", "window", "App", children=(node("0/0", "button", long_name),))
+    assert resolve_one(tree, NodeSelector(name="lungo")).id == "0/0"

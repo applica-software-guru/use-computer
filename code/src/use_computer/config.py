@@ -85,6 +85,11 @@ class Settings(BaseSettings):
         description="The node budget. Beyond it the tree is truncated and says so.",
     )
     tree_depth: int = Field(default=20, ge=0, description="Maximum depth from the scope root.")
+    tree_max_text: int = Field(
+        default=200,
+        ge=0,
+        description="Longest name or value a node reports. Identification, not content.",
+    )
     tree_fallback: bool = Field(
         default=True, description="Capture a screenshot when the tree cannot answer."
     )

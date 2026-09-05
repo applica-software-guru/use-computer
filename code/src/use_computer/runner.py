@@ -55,7 +55,7 @@ from use_computer.errors import (
     UITreeUnavailableError,
     UseComputerError,
 )
-from use_computer.selectors import budget, count, find, prune, resolve_one, subtree
+from use_computer.selectors import budget, clamp_text, count, find, prune, resolve_one, subtree
 from use_computer.tree import (
     Box,
     NodeSelector,
@@ -298,7 +298,10 @@ class Session:
             if selector is not None:
                 # Resolution happens now, against a tree read now. That is what makes a handle
                 # from an earlier run safe to carry: nothing is trusted from the old snapshot.
-                matched = self._resolve_node(selector)
+                # Matching sees the full text; only what is reported back is clamped.
+                matched = clamp_text(
+                    self._resolve_node(selector), settings.tree_max_text
+                )
             if settings.dry_run:
                 # Everything above ran: the profile, the scaling, the key parsing, and the
                 # selector. A dry run that skipped resolution would tell the agent nothing it
@@ -517,6 +520,8 @@ class Session:
             # The provider works and there is nothing here to act on. Saying "empty" and handing
             # over the picture is the useful answer; an empty tree on its own is not.
             return self._no_tree(TreeReason.EMPTY, fallback)
+
+        root = clamp_text(root, settings.tree_max_text)
 
         if action.out is not None:
             action.out.parent.mkdir(parents=True, exist_ok=True)

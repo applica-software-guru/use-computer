@@ -3,7 +3,7 @@ title: "UI Tree"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.2"
+version: "1.3"
 ---
 
 # UI Tree
@@ -82,6 +82,11 @@ element like that can be operated through the API and **cannot be clicked**: an 
 have to fall back to its centre refuses instead, because that centre is arithmetic and not a place.
 Clicking it is precisely the failure [coordinate-spaces.md](coordinate-spaces.md) exists to
 prevent.
+
+A node's `name` and `value` are clamped to `tree-max-text`, with a `…` marking what was cut. They
+are there to identify an element, not to read it: one terminal window otherwise contributes more
+bytes than the other seventy nodes together. Matching is unaffected — a selector is resolved
+against the full text, and only what is reported back is clamped.
 
 **Truncation is never silent.** The result carries `truncated`, `node_count` and the ids that were
 cut, and `--of ID` re-enters at any of them — so a truncated tree is a starting point, not a dead

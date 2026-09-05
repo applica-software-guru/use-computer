@@ -39,6 +39,9 @@ HIDDEN_STATES = frozenset({"offscreen", "hidden", "invisible"})
 #: How many cut subtree roots to name. Truncation has to be reported, not re-enacted.
 MAX_TRUNCATED_IDS = 50
 
+#: Appended to a name or value that was clamped, so a reader can tell.
+ELLIPSIS = "\u2026"
+
 
 def walk(node: UINode) -> Iterator[UINode]:
     """Pre-order traversal, the order ids are assigned in."""
@@ -144,6 +147,32 @@ def budget(root: UINode, max_nodes: int) -> tuple[UINode, int, bool, tuple[str, 
     return capped, count(capped), True, tuple(cut)
 
 
+def clamp_text(node: UINode, limit: int) -> UINode:
+    """Bound the text a node carries into the caller's context.
+
+    The node budget counts nodes, which is the wrong unit for this: a single terminal or editor
+    reports its whole buffer as one value, and thirteen kilobytes from one node defeats a budget
+    of four hundred. `name` and `value` identify an element; they are not a way to read its
+    contents, and a tree that quietly became a document dump is the base64 mistake wearing a
+    different hat.
+
+    Applied on the way out, never before matching -- a selector must still see the full name.
+    """
+
+    def clip(text: str | None) -> str | None:
+        if text is None or len(text) <= limit:
+            return text
+        return text[:limit] + ELLIPSIS
+
+    return node.model_copy(
+        update={
+            "name": clip(node.name),
+            "value": clip(node.value),
+            "children": tuple(clamp_text(child, limit) for child in node.children),
+        }
+    )
+
+
 def subtree(root: UINode, node_id: str) -> UINode | None:
     """The node at ``node_id``, with everything under it. What ``--of`` re-enters at."""
     for node in walk(root):
@@ -213,6 +242,7 @@ def resolve_one(root: UINode, selector: NodeSelector) -> UINode:
 
 __all__ = [
     "budget",
+    "clamp_text",
     "find",
     "is_interesting",
     "matches",
