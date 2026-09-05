@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "use-computer-cli"
-version = "0.3.0"
+version = "0.3.1"
 description = "Execute input on a screen for computer-use agents: move, click, drag, scroll, type, key, screenshot."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -52,6 +52,11 @@ vnc = ["vncdotool>=1.3"]
 # bindings come from the distro (python3-gi, gir1.2-atspi-2.0) and are reached with a
 # --system-site-packages virtualenv; the error message says so when they are absent.
 tree = [
+    # python-xlib reads _NET_ACTIVE_WINDOW, the only reliable answer to "which window is in
+    # front" -- AT-SPI reports `active` per application and marks several at once. A pure-Python
+    # wheel with no build step, which is exactly what PyGObject was not, so it does not
+    # reintroduce BUG-003. Imported softly: absent, or on Wayland, the tool falls back.
+    "python-xlib>=0.33; sys_platform == 'linux'",
     "uiautomation>=2.0; sys_platform == 'win32'",
     "pyobjc-framework-ApplicationServices>=10; sys_platform == 'darwin'",
 ]
@@ -102,6 +107,7 @@ module = [
     "ApplicationServices.*",
     "Quartz.*",
     "gi.*",
+    "Xlib.*",
     "uiautomation.*",
     "tomli",
 ]

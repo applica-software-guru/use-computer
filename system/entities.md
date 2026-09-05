@@ -2,8 +2,8 @@
 title: "Entities"
 status: synced
 author: ""
-last-modified: "2026-09-05T12:40:00.000Z"
-version: "3.0"
+last-modified: "2026-09-05T13:30:00.000Z"
+version: "3.1"
 ---
 
 # Entities
@@ -87,7 +87,8 @@ One entry of what `windows` returns: `id`, `title: str | None`, `role`, `app: st
 
 `active` is true for **at most one** window in a list: it answers which window `--window focused`
 resolves to, so it is that decision, made once. A platform that reports `focused` per application
-marks several at a time, which is not an answer.
+marks several at a time, which is not an answer — and where a window manager can be asked
+(`ActiveWindow`), its answer settles it instead of the flags.
 
 `app` is the application the window belongs to. Without it a candidate list is unreadable: two
 windows both titled "ChatGPT" are told apart by what they belong to, not by the title that made
@@ -95,6 +96,11 @@ them ambiguous.
 
 `pid` lives here and on nothing else. A window list is where it is worth its bytes; on every node
 of a tree it is repetition.
+
+### ActiveWindow *(frozen)*
+
+What a window manager can say about the window in front: `pid: int | None`, `title: str | None`.
+A hint, never a decision — the matching to a `WindowInfo` is policy and lives in `selectors.py`.
 
 ### TreeScope
 

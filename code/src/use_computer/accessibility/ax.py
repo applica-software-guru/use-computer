@@ -15,7 +15,14 @@ from typing import Any
 from use_computer.accessibility import roles
 from use_computer.accessibility.base import require
 from use_computer.errors import PermissionDeniedError
-from use_computer.tree import Box, TreeScope, TreeScopeKind, UINode, WindowInfo
+from use_computer.tree import (
+    ActiveWindow,
+    Box,
+    TreeScope,
+    TreeScopeKind,
+    UINode,
+    WindowInfo,
+)
 
 #: kAXErrorAPIDisabled -- the process is not trusted for accessibility.
 API_DISABLED = -25211
@@ -196,6 +203,10 @@ class AxProvider:
         roles.EXPAND: "AXPress",
         roles.COLLAPSE: "AXPress",
     }
+
+    def active_window(self) -> ActiveWindow | None:
+        """This platform's own `active` flag is already per window, so there is nothing to add."""
+        return None
 
     def activate(self, window_id: str) -> bool:
         """macOS windows do accept a raise of their own: AXRaise."""

@@ -68,12 +68,12 @@ from use_computer.selectors import (
     clamp_text,
     count,
     find,
+    mark_active,
     mark_unexposed,
     notable_states,
     prune,
     resolve_one,
     resolve_window,
-    sole_active,
     subtree,
     summarise_offscreen,
     walk,
@@ -428,7 +428,7 @@ class Session:
             return _Outcome(tree=self._tree(action))
 
         if isinstance(action, WindowsAction):
-            found = tuple(sole_active(self._provider().windows()))
+            found = tuple(self._window_list())
             if action.format is OutputFormat.JSON:
                 return _Outcome(windows=WindowsResult(windows=found))
             return _Outcome(windows=WindowsResult(text=render.windows(found)))
@@ -540,9 +540,19 @@ class Session:
         again = self._window_for(resolved)
         return self._name_window(again) if again is not None else root.describe()
 
+    def _window_list(self) -> list[WindowInfo]:
+        """The windows, with the active mark settled once.
+
+        Settled here rather than in each provider, and with the window manager's answer preferred
+        over the per-window flags where a provider can offer one.
+        """
+        provider = self._provider()
+        entries: list[WindowInfo] = mark_active(provider.windows(), provider.active_window())
+        return entries
+
     def _window_for(self, scope: TreeScope) -> WindowInfo | None:
         """The entry in `windows` this scope names, when it names exactly one."""
-        entries = sole_active(self._provider().windows())
+        entries = self._window_list()
         if scope.kind is TreeScopeKind.FOCUSED:
             return next((entry for entry in entries if entry.active), None)
         if scope.kind is TreeScopeKind.ID:
@@ -632,8 +642,7 @@ class Session:
             # windows claiming to be active is not an answer, and picking the first is how an
             # agent reads, clicks and verifies inside the wrong application, consistently.
             return TreeScope(
-                kind=TreeScopeKind.ID,
-                value=active_window(sole_active(self._provider().windows())).id,
+                kind=TreeScopeKind.ID, value=active_window(self._window_list()).id
             )
         if scope.kind is not TreeScopeKind.TITLE or not scope.value:
             return scope

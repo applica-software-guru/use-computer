@@ -592,3 +592,18 @@ def test_a_single_screenshot_keeps_its_whole_path(
     result = invoke(runner, "screenshot")
     assert strip_ansi(result.stdout).split("\n")[0].startswith("/")
     assert "screenshots in " not in strip_ansi(result.stdout)
+
+
+def test_the_skill_command_answers_in_text(runner: CliRunner) -> None:
+    # The command an agent runs to find out whether its own instructions are current, and the last
+    # one still replying with a JSON object after the contract was inverted.
+    result = invoke(runner, "skill", "status")
+    assert result.exit_code == EXIT_OK
+    assert not result.stdout.lstrip().startswith("{")
+    assert result.stdout.split()[0] == "status"
+
+
+def test_the_skill_command_still_has_a_json_form(runner: CliRunner) -> None:
+    result = invoke(runner, "skill", "status", "--format", "json")
+    assert result.exit_code == EXIT_OK
+    assert json.loads(result.stdout)["action"] == "status"

@@ -2,8 +2,8 @@
 title: "Tech Stack"
 status: synced
 author: ""
-last-modified: "2026-09-05T13:15:00.000Z"
-version: "1.7"
+last-modified: "2026-09-05T13:30:00.000Z"
+version: "1.8"
 ---
 
 # Tech Stack
@@ -89,6 +89,19 @@ there by default is how that gets caught before CI rather than after.
 - **ruff**, line length **100**, selecting **E, F, I, UP, B, SIM, C4**, with **B008 ignored in the
   cli module** for typer idioms.
 - **mypy in strict mode**.
+
+## The Linux `tree` extra has one thing in it
+
+`python-xlib`, and only on Linux. It is how `_NET_ACTIVE_WINDOW` is read, which is the only
+reliable answer to "which window is in front" — AT-SPI cannot say. A **pure-Python wheel with no
+build step**, which is precisely what PyGObject was not: the reason
+[BUG-003](../bugs/BUG-003-tree-extra-cannot-install-on-linux.md) emptied this extra was that
+`pip install "use-computer-cli[tree]"` had to compile, needed system headers, and failed — leaving
+the user with no CLI at all rather than a CLI missing one capability. Nothing here compiles.
+
+It is imported **softly**. Absent, or on Wayland where the property is not published, the tool
+behaves exactly as it does without it. `gi` still comes from the distribution and the error that
+names those packages is unchanged.
 
 ## CI / Release
 

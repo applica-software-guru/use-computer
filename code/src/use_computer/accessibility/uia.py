@@ -11,7 +11,14 @@ from typing import Any
 from use_computer.accessibility import roles
 from use_computer.accessibility.base import require
 from use_computer.errors import UITreeUnavailableError
-from use_computer.tree import Box, TreeScope, TreeScopeKind, UINode, WindowInfo
+from use_computer.tree import (
+    ActiveWindow,
+    Box,
+    TreeScope,
+    TreeScopeKind,
+    UINode,
+    WindowInfo,
+)
 
 
 class UiaProvider:
@@ -166,6 +173,10 @@ class UiaProvider:
         )
 
     # --- acting ------------------------------------------------------------------------------
+
+    def active_window(self) -> ActiveWindow | None:
+        """This platform's own `active` flag is already per window, so there is nothing to add."""
+        return None
 
     def activate(self, window_id: str) -> bool:
         """Windows has a native raise: `SetActive` on the top-level control."""

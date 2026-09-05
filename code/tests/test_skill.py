@@ -111,19 +111,19 @@ def test_the_scope_flag_accepts_every_documented_value() -> None:
     assert {scope.value for scope in Scope} == {"user", "project", "agents", "claude"}
 
 
-def test_the_cli_reports_json(project: Path) -> None:
+def test_the_cli_reports_what_it_did(project: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["skill", "install"], catch_exceptions=False)
     assert result.exit_code == EXIT_OK
-    payload = json.loads(result.stdout)
-    assert payload["status"] == "up-to-date"
-    assert payload["scope"] == "project"
+    assert result.stdout.split()[:3] == ["install", "project", "up-to-date"]
 
     again = runner.invoke(app, ["skill", "install"], catch_exceptions=False)
     assert again.exit_code == EXIT_FAILURE
 
-    status_result = runner.invoke(app, ["skill", "status"], catch_exceptions=False)
+    status_result = runner.invoke(
+        app, ["skill", "status", "--format", "json"], catch_exceptions=False
+    )
     assert json.loads(status_result.stdout)["installed"] is True
 
     removed = runner.invoke(app, ["skill", "remove"], catch_exceptions=False)
-    assert json.loads(removed.stdout)["status"] == "missing"
+    assert removed.stdout.split()[:3] == ["remove", "project", "missing"]

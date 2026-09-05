@@ -15,7 +15,7 @@ from use_computer.errors import (
     NodeNotFoundError,
     UITreeUnavailableError,
 )
-from use_computer.tree import Box, NodeSelector, UINode, WindowInfo
+from use_computer.tree import ActiveWindow, Box, NodeSelector, UINode, WindowInfo
 
 #: Roles that are worth keeping even when the platform reports no actions and no name -- an
 #: empty text field has nothing to say about itself and is still the thing an agent came for.
@@ -109,6 +109,37 @@ def is_interesting(node: UINode) -> bool:
         # describing nothing. Collapsing it away would delete the only sign a canvas exists.
         return True
     return is_on_screen(node) and (is_interactable(node) or carries_text(node))
+
+
+def mark_active(
+    entries: Sequence[WindowInfo], hint: ActiveWindow | None = None
+) -> list[WindowInfo]:
+    """Decide which single window is the active one, preferring what the window manager says.
+
+    The flags cannot settle it. AT-SPI reports `active` per *application*, so on an ordinary
+    desktop three windows claimed it at once. A window manager can settle it -- on X11
+    `_NET_ACTIVE_WINDOW` names one window, by pid and title -- and where that answer exists it wins
+    over the flags.
+
+    The hint is a hint: absent on Wayland, absent without the binding, and wrong if an application
+    renamed its window between the two reads. It never invents a mark, and when it matches nothing
+    the flags decide exactly as before.
+    """
+    matched = _by_hint(entries, hint) if hint is not None else None
+    if matched is None:
+        return sole_active(entries)
+    return [entry.model_copy(update={"active": entry.id == matched.id}) for entry in entries]
+
+
+def _by_hint(entries: Sequence[WindowInfo], hint: ActiveWindow) -> WindowInfo | None:
+    """The one window this hint names, or nothing -- never a first match."""
+    candidates = [entry for entry in entries if hint.pid is not None and entry.pid == hint.pid]
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        return None
+    named = [entry for entry in candidates if entry.title == hint.title]
+    return named[0] if len(named) == 1 else None
 
 
 def sole_active(entries: Sequence[WindowInfo]) -> list[WindowInfo]:

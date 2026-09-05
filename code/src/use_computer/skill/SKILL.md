@@ -2,7 +2,7 @@
 name: use-computer
 description: Read and act on a GUI — the accessibility tree of what is on screen (roles, names, clickable boxes), then click, focus, toggle, expand, select, set a value, type, press keys, drag, scroll, screenshot. Locally or over VNC. Ask the tree first and use ui-locator's pixel coordinates only when the tree cannot see the element. Bring a window forward before aiming at it, and confirm what happened by re-reading, not by trusting the line.
 x-skill-id: use-computer
-x-skill-version: "5"
+x-skill-version: "6"
 ---
 
 # use-computer
@@ -135,6 +135,9 @@ id      app              role    title                  pid     box             
 0/29/0  TelegramDesktop  panel   Roberto Conterosito    15872   331,130 1152x784
 0/34/0  Codex            window  ChatGPT                144775  0,0 1920x1038     *
 ```
+
+`*` marks the window that is actually in front — the window manager's answer where there is one,
+not a flag the toolkit sets per application. At most one window ever carries it.
 
 Use the `title` as `--window` for everything that follows, and **`app` to tell windows apart** — a
 title alone will not tell you which one is Telegram. The `*` marks the one `--window focused`
@@ -450,10 +453,11 @@ of an element action is also the cheapest way to check a selector is unambiguous
   screenshots and coordinates. Otherwise the message names exactly what to install: an extra on
   Windows and macOS, and on Linux the distro packages plus a `--system-site-packages` virtualenv,
   because the extra does not help there.
-- **`AmbiguousWindowError` on `focused`** — several windows claim to be active, which on Linux
-  means the platform reports it per application and cannot say which is on top. Read `windows` and
-  pass `--window ID`. When it is ambiguous, `windows` shows **no** `*` at all rather than a
-  guess — an empty column is the answer, not a missing one.
+- **`AmbiguousWindowError` on `focused`** — nothing could say which window is on top. Where a
+  window manager can be asked it settles this, so seeing it means it could not be (Wayland, no
+  session, a window renamed between two reads). Read `windows` and pass `--window ID`. When it is
+  ambiguous, `windows` shows **no** `*` at all rather than a guess — an empty column is the
+  answer, not a missing one.
 - **`BackendNotAvailableError`** — the extra is not installed. The message names it.
 - **Local backend not enabled** — the `local` backend controls the user's own machine and needs
   an explicit opt-in. Tell the user to set `allow-local = true` in the profile; do not work

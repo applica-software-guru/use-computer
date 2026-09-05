@@ -2,8 +2,8 @@
 title: "Interfaces"
 status: synced
 author: ""
-last-modified: "2026-09-05T12:40:00.000Z"
-version: "4.0"
+last-modified: "2026-09-05T13:30:00.000Z"
+version: "4.1"
 ---
 
 # Interfaces
@@ -78,6 +78,7 @@ use-computer config init [--backend local|vnc] [--profile NAME]
 use-computer config show [--format text|json]
 use-computer skill  install|update|remove|status
                     [--scope user|project|agents|claude] [--dir PATH] [--force]
+                    [--format text|json]
 ```
 
 ### Global options
@@ -85,7 +86,7 @@ use-computer skill  install|update|remove|status
 `--use PROFILE`, `--dry-run`, `--verify`, `--space screenshot|actuation`, `--delay SECONDS`,
 `-v/-vv`, `--format text|json`, `--version`.
 
-`--version` and `config show` obey `--format` like everything else: text by default
+`--version`, `config show` and `skill` obey `--format` like everything else: text by default
 (`use-computer 0.2.2`, and aligned `key  value  layer  source` lines), the object under
 `--format json`. A command that answers in JSON while stdout is text makes the contract worth what
 its least consistent command is worth.
@@ -414,6 +415,7 @@ class AccessibilityProvider(Protocol):
     def snapshot(self, scope: TreeScope, depth: int) -> UINode: ...
     def perform(self, node_id: str, action: str, value: str | None) -> bool: ...
     def activate(self, window_id: str) -> bool: ...
+    def active_window(self) -> ActiveWindow | None: ...
     def close(self) -> None: ...
 ```
 
@@ -436,6 +438,12 @@ knows, and the layer above it does two things it can do: a `click` command prefe
 action on a node whose role makes selection the activation (`radio`, `listitem`, `option`,
 `treeitem`, `tab`, `menuitem`), and where the action should have left a trace on the node —
 `checked`, `selected` — the node is re-read and the result says when nothing moved.
+
+`active_window` is a **hint**, not an answer: what the window manager says is in front, as a pid
+and a title. `None` means this platform has nothing better than the per-window flags, and is the
+honest reply on Wayland or without the binding. The matching from hint to window lives in
+`selectors.mark_active`, so all three platforms share it and the ambiguity cases test without a
+session bus.
 
 `activate` brings a window forward and gives it keyboard focus. A window object exposes no actions
 on any of the three platforms, so the general implementation is `grab_focus` on the first focusable

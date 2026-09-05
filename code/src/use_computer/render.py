@@ -159,6 +159,17 @@ def config(payload: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def skill(payload: Mapping[str, Any]) -> str:
+    """What a `skill` command did, on one line: action, scope, state, path."""
+    parts = [
+        str(payload.get("action", "")),
+        str(payload.get("scope", "")),
+        str(payload.get("status", "")),
+        str(payload.get("path", "")),
+    ]
+    return "  ".join(part for part in parts if part)
+
+
 __all__ = [
     "TREE_LEGEND",
     "WINDOWS_LEGEND",
@@ -166,4 +177,5 @@ __all__ = [
     "windows",
     "windows_for_a_reader",
     "config",
+    "skill",
 ]

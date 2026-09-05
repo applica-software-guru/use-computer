@@ -2,8 +2,8 @@
 title: "Agent Skill"
 status: synced
 author: ""
-last-modified: "2026-09-05T12:40:00.000Z"
-version: "4.0"
+last-modified: "2026-09-05T13:30:00.000Z"
+version: "4.1"
 ---
 
 # Agent Skill
@@ -107,6 +107,18 @@ use-computer skill update  [--scope <scope>] [--dir <path>]
 use-computer skill remove  [--scope <scope>] [--dir <path>]
 use-computer skill status  [--scope <scope>] [--dir <path>]
 ```
+
+## What the `skill` command answers with
+
+Text, like every other command, with `--format json` for a caller that parses:
+
+```
+status  project  outdated  /home/you/workspace/.agents/skills/use-computer/SKILL.md
+```
+
+This is the command an agent runs to find out whether its own instructions are current, and it was
+the last one still replying with a JSON object after the contract was inverted. A contract with
+three exceptions is not a contract.
 
 ## Scopes
 

@@ -183,6 +183,20 @@ class WindowsResult(BaseModel):
     windows: tuple[WindowInfo, ...] = ()
 
 
+class ActiveWindow(BaseModel):
+    """What a window manager says is in front: a hint, never a decision.
+
+    AT-SPI cannot answer this -- it reports `active` per application, so several windows claim it
+    at once. A window manager can: on X11 `_NET_ACTIVE_WINDOW` names exactly one. Matching the hint
+    to a window is policy and lives in `selectors.py`, so the three platforms cannot drift on it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    pid: int | None = None
+    title: str | None = None
+
+
 class TreeScope(BaseModel):
     """What to snapshot. The focused window by default, never the whole desktop."""
 

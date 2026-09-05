@@ -17,7 +17,14 @@ from typing import Any
 from use_computer.accessibility import roles
 from use_computer.accessibility.base import require
 from use_computer.errors import UITreeUnavailableError, UseComputerError
-from use_computer.tree import Box, TreeScope, TreeScopeKind, UINode, WindowInfo
+from use_computer.tree import (
+    ActiveWindow,
+    Box,
+    TreeScope,
+    TreeScopeKind,
+    UINode,
+    WindowInfo,
+)
 
 #: Where a distro puts PyGObject. The compiled part carries the Python version it was built for,
 #: which is the fact that decides whether any of the advice below will work.
@@ -401,6 +408,47 @@ class AtspiProvider:
             if roles.atspi_action(interface.get_action_name(index) or "") == action:
                 return bool(interface.do_action(index))
         return False
+
+    def active_window(self) -> ActiveWindow | None:
+        """Ask the window manager, because AT-SPI cannot answer this.
+
+        `_NET_ACTIVE_WINDOW` on the root window names exactly one window; AT-SPI's `active` state
+        is per application and marked three at once on the desktop that produced the bug. Imported
+        softly on purpose: no python-xlib, or a Wayland session that publishes no such property,
+        and the caller falls back to the flags.
+        """
+        try:
+            from Xlib import X, display
+        except ImportError:
+            return None
+        try:
+            connection = display.Display()
+        except Exception:
+            return None  # no X server: Wayland, or no session at all
+        try:
+            root = connection.screen().root
+            active = root.get_full_property(
+                connection.intern_atom("_NET_ACTIVE_WINDOW"), X.AnyPropertyType
+            )
+            if active is None or not active.value:
+                return None
+            window = connection.create_resource_object("window", active.value[0])
+            pid = window.get_full_property(
+                connection.intern_atom("_NET_WM_PID"), X.AnyPropertyType
+            )
+            name = window.get_full_property(
+                connection.intern_atom("_NET_WM_NAME"), connection.intern_atom("UTF8_STRING")
+            )
+            return ActiveWindow(
+                pid=int(pid.value[0]) if pid is not None and pid.value else None,
+                title=name.value.decode("utf-8", "replace") if name is not None else None,
+            )
+        except Exception:
+            # A hint that fails is not an error: the caller has a working fallback.
+            return None
+        finally:
+            with suppress(Exception):
+                connection.close()
 
     def activate(self, window_id: str) -> bool:
         """AT-SPI offers no raise for a window.

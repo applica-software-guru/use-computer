@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from use_computer.errors import PermissionDeniedError, UITreeUnavailableError
-from use_computer.tree import Box, TreeScope, UINode, WindowInfo
+from use_computer.tree import ActiveWindow, Box, TreeScope, UINode, WindowInfo
 
 
 def node(
@@ -100,6 +100,8 @@ class FakeProvider:
     window_list: tuple[WindowInfo, ...] | None = None
     #: Whether this platform has a native raise. AT-SPI does not; Windows and macOS do.
     native_raise: bool = False
+    #: What a window manager would say is in front, when the test is about that.
+    hint: ActiveWindow | None = None
     activated: list[str] = field(default_factory=list)
 
     def windows(self) -> list[WindowInfo]:
@@ -130,6 +132,9 @@ class FakeProvider:
     def perform(self, node_id: str, action: str, value: str | None) -> bool:
         self.calls.append((node_id, action, value))
         return action not in self.refuse
+
+    def active_window(self) -> ActiveWindow | None:
+        return self.hint
 
     def activate(self, window_id: str) -> bool:
         self.activated.append(window_id)

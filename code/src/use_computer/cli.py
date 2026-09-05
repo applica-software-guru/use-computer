@@ -1210,40 +1210,67 @@ def skill_install_command(
     scope: ScopeOption = Scope.PROJECT,
     dir: DirOption = None,
     force: Annotated[bool, typer.Option("--force", help="Overwrite an existing copy.")] = False,
+    format: FormatOption = OutputFormat.TEXT,
 ) -> None:
     """Install the bundled skill."""
     try:
         state = skill_install(scope, override=dir, force=force)
     except UseComputerError as exc:
         _fail(exc)
-    _emit({"action": "install", **_skill_json(state)})
+    _skill_say("install", state, format)
 
 
 @skill_app.command("update")
-def skill_update_command(scope: ScopeOption = Scope.PROJECT, dir: DirOption = None) -> None:
+def skill_update_command(
+    scope: ScopeOption = Scope.PROJECT,
+    dir: DirOption = None,
+    format: FormatOption = OutputFormat.TEXT,
+) -> None:
     """Refresh an installed skill from the bundled copy."""
     try:
         state = skill_update(scope, override=dir)
     except UseComputerError as exc:
         _fail(exc)
-    _emit({"action": "update", **_skill_json(state)})
+    _skill_say("update", state, format)
 
 
 @skill_app.command("remove")
-def skill_remove_command(scope: ScopeOption = Scope.PROJECT, dir: DirOption = None) -> None:
+def skill_remove_command(
+    scope: ScopeOption = Scope.PROJECT,
+    dir: DirOption = None,
+    format: FormatOption = OutputFormat.TEXT,
+) -> None:
     """Remove an installed skill."""
     try:
         state = skill_remove(scope, override=dir)
     except UseComputerError as exc:
         _fail(exc)
-    _emit({"action": "remove", **_skill_json(state)})
+    _skill_say("remove", state, format)
 
 
 @skill_app.command("status")
-def skill_status_command(scope: ScopeOption = Scope.PROJECT, dir: DirOption = None) -> None:
+def skill_status_command(
+    scope: ScopeOption = Scope.PROJECT,
+    dir: DirOption = None,
+    format: FormatOption = OutputFormat.TEXT,
+) -> None:
     """Report whether the skill is installed and current."""
     state = skill_status(scope, override=dir)
-    _emit({"action": "status", **_skill_json(state)})
+    _skill_say("status", state, format)
+
+
+def _skill_say(action: str, state: Any, format: OutputFormat) -> None:
+    """The skill commands answer in text like everything else.
+
+    This is the command an agent runs to find out whether its own instructions are current, and it
+    was the last one still replying with a JSON object. A contract with three exceptions is not a
+    contract.
+    """
+    payload = {"action": action, **_skill_json(state)}
+    if format is OutputFormat.JSON:
+        _emit(payload)
+        return
+    _write(render.skill(payload))
 
 
 def _skill_json(state: Any) -> dict[str, Any]:

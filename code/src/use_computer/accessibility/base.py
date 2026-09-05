@@ -15,7 +15,7 @@ from types import ModuleType
 from typing import Protocol, runtime_checkable
 
 from use_computer.errors import UITreeUnavailableError
-from use_computer.tree import TreeScope, UINode, WindowInfo
+from use_computer.tree import ActiveWindow, TreeScope, UINode, WindowInfo
 
 
 @runtime_checkable
@@ -57,6 +57,15 @@ class AccessibilityProvider(Protocol):
         offers no raise for a window object, and the caller should focus a descendant instead --
         which raises the top-level window on all three. AT-SPI is the ``False`` case; a window
         accessible there reports no actions at all.
+        """
+
+    def active_window(self) -> ActiveWindow | None:
+        """What the window manager says is in front, as a pid and a title.
+
+        A *hint*. ``None`` means this platform has nothing better than the per-window flags, which
+        is the honest answer on Wayland or without the optional binding. Matching it to a window is
+        policy and lives in ``selectors.mark_active``: a rule that lives in a provider is a rule
+        the other two platforms drift from, which has already happened once here.
         """
 
     def close(self) -> None:
