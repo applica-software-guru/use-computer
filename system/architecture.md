@@ -3,7 +3,7 @@ title: "Architecture"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.3"
+version: "1.4"
 ---
 
 # Architecture
@@ -24,7 +24,7 @@ config.py         project-root discovery, layered settings, config show
 tree.py           pure: UINode, Box, TreeScope, TreeResult, NodeSelector, Via
 selectors.py      pure: match a NodeSelector against a tree, prune, budget, clamp text,
                   keep notable states, count what is off screen instead of expanding it
-render.py         pure: one line per node, with a legend -- what the caller actually reads
+render.py         pure: one line per node with a legend, plus the --human views
 backends/
   base.py         the Protocol + BackendNotAvailableError
   local.py        pynput + mss          (extra: local)

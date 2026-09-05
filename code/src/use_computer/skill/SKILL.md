@@ -33,7 +33,9 @@ that still resolves.
 
 ## Contract
 
-- **stdout** is one JSON object per run. Parse it.
+- **stdout** is one JSON object per run. Parse it. (There is a `--human` flag; it prints prose
+  instead of JSON and exists for a person at a terminal. **Never pass it** — it would break your
+  own parsing.)
 - **stderr** is diagnostics. Read it only when debugging.
 - **exit codes**: `0` success, `1` failure, `2` bad usage.
 

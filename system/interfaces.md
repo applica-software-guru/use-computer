@@ -3,7 +3,7 @@ title: "Interfaces"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "2.1"
+version: "2.2"
 ---
 
 # Interfaces
@@ -71,7 +71,12 @@ use-computer skill  install|update|remove|status
 ### Global options
 
 `--use PROFILE`, `--dry-run`, `--verify`, `--space screenshot|actuation`, `--delay SECONDS`,
-`-v/-vv`, `--version`.
+`-v/-vv`, `--human`, `--version`.
+
+`--human` prints for a reader: aligned columns for `windows`, the bare rendering for `tree`, and
+one line per action for everything else — the matched node, the rung taken, the duration. Errors
+stay on stderr and stdout gets nothing. Exit codes are unchanged: it alters what is written, never
+what is meant. **Every invocation without it still prints exactly one JSON object.**
 
 `--verify` writes the after-screenshot to a file and reports its path in `screenshot`, so an agent
 that verified an action does not then have to ask for the screen it already paid to capture.

@@ -3,7 +3,7 @@ title: "CLI"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.4"
+version: "1.5"
 ---
 
 # CLI
@@ -38,6 +38,11 @@ use-computer skill install --scope project
 
 An agent can therefore pipe stdout into a JSON parser unconditionally.
 
+**`--human` is the only exception, and it must be asked for.** With it, stdout carries aligned text
+and no JSON; without it, every invocation prints exactly one JSON object whatever happens. It is
+never inferred from `isatty()`: agents run commands under a pty often enough that switching format
+on them would fail as a parse error far from its cause, on the caller least able to diagnose it.
+
 ## Global flags
 
 | Flag | Meaning |
@@ -48,6 +53,7 @@ An agent can therefore pipe stdout into a JSON parser unconditionally.
 | `--space <screenshot\|actuation>` | Coordinate space of the coordinates given. |
 | `--delay <seconds>` | Delay applied after each action. |
 | `-v/-vv` | Verbosity on stderr. |
+| `--human` | Print for a reader instead of a parser. |
 
 ## Reading flags
 

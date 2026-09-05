@@ -81,4 +81,51 @@ def windows(entries: Sequence[WindowInfo]) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["TREE_LEGEND", "WINDOWS_LEGEND", "tree", "windows"]
+
+
+# --- the human views -----------------------------------------------------------------------------
+# Aligned columns and nothing else. rich is available and is exactly the wrong instinct: this
+# output is read in terminals, pipes and CI logs, and only alignment survives all three. The
+# project has been bitten by rich twice -- a newline inside a JSON string, and `[tree]` eaten as
+# markup -- and both times the lesson was to hand it less, not more.
+
+
+def _columns(rows: list[list[str]], headers: list[str]) -> str:
+    widths = [len(head) for head in headers]
+    for row in rows:
+        widths = [max(width, len(cell)) for width, cell in zip(widths, row, strict=True)]
+    lines = ["  ".join(head.ljust(width) for head, width in zip(headers, widths, strict=True))]
+    for row in rows:
+        lines.append("  ".join(cell.ljust(width) for cell, width in zip(row, widths, strict=True)))
+    return "\n".join(line.rstrip() for line in lines)
+
+
+def _ellipsis(text: str, limit: int = 44) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "\u2026"
+
+
+def windows_for_a_reader(entries: Sequence[WindowInfo]) -> str:
+    """The window list, as columns."""
+    if not entries:
+        return "no windows"
+    rows = [
+        [
+            entry.id,
+            entry.role,
+            _ellipsis(entry.title or ""),
+            str(entry.pid) if entry.pid is not None else "",
+            f"{entry.box.x},{entry.box.y} {entry.box.width}x{entry.box.height}",
+            "*" if entry.active else "",
+        ]
+        for entry in entries
+    ]
+    return _columns(rows, ["id", "role", "title", "pid", "box", "active"])
+
+
+__all__ = [
+    "TREE_LEGEND",
+    "WINDOWS_LEGEND",
+    "tree",
+    "windows",
+    "windows_for_a_reader",
+]

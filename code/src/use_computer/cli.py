@@ -23,6 +23,7 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 
+from use_computer import render
 from use_computer.actions import (
     Action,
     ActionListAdapter,
@@ -127,6 +128,10 @@ VerifyOption = Annotated[
     bool, typer.Option("--verify", help="Compare the screen before and after each action.")
 ]
 VerboseOption = Annotated[int, typer.Option("-v", count=True, help="Diagnostics on stderr.")]
+HumanOption = Annotated[
+    bool,
+    typer.Option("--human", help="Print for a reader instead of a parser. Never inferred."),
+]
 
 # --- selector options ---------------------------------------------------------------------------
 # An action names its target by coordinate or by element. These are the element half, shared by
@@ -272,7 +277,52 @@ def _config(
     return resolved
 
 
-def _run(actions: Sequence[Action], config: ResolvedConfig, verbose: int = 0) -> NoReturn:
+def _human_lines(result: Any) -> str:
+    """One rendering of a RunResult for a person: the read, or a line per action.
+
+    A rendering of what is already in the result, never a second source of truth.
+    """
+    chunks: list[str] = []
+    for item in result.results:
+        if item.tree is not None:
+            if item.tree.text:
+                chunks.append(item.tree.text)
+            elif item.tree.reason is not None:
+                shot = item.tree.screenshot
+                where = f"; screenshot at {shot.path}" if shot is not None else ""
+                chunks.append(f"no tree here ({item.tree.reason.value}){where}")
+            continue
+        if item.windows is not None:
+            if item.windows.windows:
+                chunks.append(render.windows_for_a_reader(item.windows.windows))
+            elif item.windows.text:
+                chunks.append(item.windows.text)
+            continue
+        if item.error is not None:
+            continue  # errors are on stderr, and stdout stays empty
+        what = item.action.action
+        if item.matched is not None:
+            what += f" {item.matched.role}"
+            if item.matched.name:
+                what += f" {item.matched.name!r}"
+            what += f" at {item.matched.id}"
+        how = ""
+        if item.via is not None:
+            how = " via the platform API" if item.via.value == "action" else " via a coordinate"
+        elif item.resolved is not None:
+            how = f" at ({item.resolved.x}, {item.resolved.y})"
+        done = "would " if not item.performed else ""
+        chunks.append(f"{done}{what}{how} \u2014 {item.duration_ms:.0f} ms")
+    return "\n".join(chunks)
+
+
+def _run(
+    actions: Sequence[Action],
+    config: ResolvedConfig,
+    verbose: int = 0,
+    *,
+    human: bool = False,
+) -> NoReturn:
     try:
         session = Session.from_profile(config=config)
     except UseComputerError as exc:
@@ -284,7 +334,15 @@ def _run(actions: Sequence[Action], config: ResolvedConfig, verbose: int = 0) ->
     finally:
         session.close()
 
-    _emit(as_json(result))
+    if human:
+        # The only thing that is ever written to stdout instead of JSON, and it has to be asked
+        # for: inferring it from isatty() would switch format on agents running under a pty.
+        text = _human_lines(result)
+        if text:
+            sys.stdout.write(text + "\n")
+            sys.stdout.flush()
+    else:
+        _emit(as_json(result))
     if not result.ok:
         for item in result.results:
             if item.error is not None:
@@ -327,11 +385,12 @@ def move(
     delay: DelayOption = None,
     dry_run: DryRunOption = False,
     verify: VerifyOption = False,
+    human: HumanOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
     """Move the pointer."""
     config = _config(use, space=space, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
-    _run([MoveAction(x=x, y=y, space=space)], config, verbose)
+    _run([MoveAction(x=x, y=y, space=space)], config, verbose, human=human)
 
 
 @app.command()
@@ -351,6 +410,7 @@ def click(
     delay: DelayOption = None,
     dry_run: DryRunOption = False,
     verify: VerifyOption = False,
+    human: HumanOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
     """Click an element, a coordinate, or where the pointer already is."""
@@ -360,6 +420,7 @@ def click(
         [_build(ClickAction, selector, via, x=x, y=y, space=space, button=button)],
         config,
         verbose,
+        human=human,
     )
 
 
@@ -379,12 +440,14 @@ def double_click(
     delay: DelayOption = None,
     dry_run: DryRunOption = False,
     verify: VerifyOption = False,
+    human: HumanOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
     """Double-click an element or a coordinate."""
     config = _config(use, space=space, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
     selector = _selector(id, role, name, exact, nth, window)
-    _run([_build(DoubleClickAction, selector, via, x=x, y=y, space=space)], config, verbose)
+    action = _build(DoubleClickAction, selector, via, x=x, y=y, space=space)
+    _run([action], config, verbose, human=human)
 
 
 @app.command("right-click")
@@ -403,12 +466,14 @@ def right_click(
     delay: DelayOption = None,
     dry_run: DryRunOption = False,
     verify: VerifyOption = False,
+    human: HumanOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
     """Click an element or a coordinate with the secondary button."""
     config = _config(use, space=space, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
     selector = _selector(id, role, name, exact, nth, window)
-    _run([_build(RightClickAction, selector, via, x=x, y=y, space=space)], config, verbose)
+    action = _build(RightClickAction, selector, via, x=x, y=y, space=space)
+    _run([action], config, verbose, human=human)
 
 
 @app.command()
@@ -423,6 +488,7 @@ def drag(
     delay: DelayOption = None,
     dry_run: DryRunOption = False,
     verify: VerifyOption = False,
+    human: HumanOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
     """Press, move, release."""
@@ -434,7 +500,7 @@ def drag(
     action = DragAction(
         from_x=from_x, from_y=from_y, to_x=to_x, to_y=to_y, space=space, button=button
     )
-    _run([action], config, verbose)
+    _run([action], config, verbose, human=human)
 
 
 @app.command()
@@ -455,6 +521,7 @@ def scroll(
     delay: DelayOption = None,
     dry_run: DryRunOption = False,
     verify: VerifyOption = False,
+    human: HumanOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
     """Scroll, at an element or a coordinate."""
@@ -470,6 +537,7 @@ def scroll(
         ],
         config,
         verbose,
+        human=human,
     )
 
 
@@ -483,12 +551,13 @@ def type_text(
     delay: DelayOption = None,
     dry_run: DryRunOption = False,
     verify: VerifyOption = False,
+    human: HumanOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
     """Type literal text. For shortcuts use `key`."""
     text = _required(text, "--text")
     config = _config(use, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
-    _run([TypeAction(text=text, rate=rate)], config, verbose)
+    _run([TypeAction(text=text, rate=rate)], config, verbose, human=human)
 
 
 @app.command()
@@ -498,6 +567,7 @@ def key(
     delay: DelayOption = None,
     dry_run: DryRunOption = False,
     verify: VerifyOption = False,
+    human: HumanOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
     """Press a key combination."""
@@ -507,7 +577,7 @@ def key(
     except Exception as exc:
         _err.print(f"[red]error:[/red] {exc}")
         raise typer.Exit(EXIT_USAGE) from exc
-    _run([action], config, verbose)
+    _run([action], config, verbose, human=human)
 
 
 @app.command()
@@ -517,11 +587,12 @@ def screenshot(
         typer.Option("--out", help="Write the PNG here. Otherwise the screenshot directory."),
     ] = None,
     use: UseOption = None,
+    human: HumanOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
     """Capture the current screen to a file and report its path."""
     config = _config(use, verbose=verbose)
-    _run([ScreenshotAction(out=out)], config, verbose)
+    _run([ScreenshotAction(out=out)], config, verbose, human=human)
 
 
 # --- element commands ---------------------------------------------------------------------------
@@ -531,11 +602,15 @@ def screenshot(
 def windows(
     format: FormatOption = OutputFormat.TEXT,
     use: UseOption = None,
+    human: HumanOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
     """List what is open. Make this call first: it costs a fraction of a tree."""
     config = _config(use, verbose=verbose)
-    _run([WindowsAction(format=format)], config, verbose)
+    # A reader gets columns, which needs the objects to lay out; the packed line is for the
+    # agent, which is not the one asking here.
+    wanted = OutputFormat.JSON if human else format
+    _run([WindowsAction(format=wanted)], config, verbose, human=human)
 
 
 @app.command()
@@ -559,6 +634,7 @@ def tree(
     ] = False,
     format: FormatOption = OutputFormat.TEXT,
     use: UseOption = None,
+    human: HumanOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
     """Read the accessibility tree of the focused window."""
@@ -579,6 +655,7 @@ def tree(
         ],
         config,
         verbose,
+        human=human,
     )
 
 
@@ -596,11 +673,12 @@ def _element_command(kind: Any, help_text: str) -> Any:
         delay: DelayOption = None,
         dry_run: DryRunOption = False,
         verify: VerifyOption = False,
+        human: HumanOption = False,
         verbose: VerboseOption = 0,
     ) -> None:
         config = _config(use, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
         selector = _require_selector(id, role, name, exact, nth, window)
-        _run([kind(selector=selector)], config, verbose)
+        _run([kind(selector=selector)], config, verbose, human=human)
 
     command.__doc__ = help_text
     command.__name__ = kind.__name__
@@ -623,6 +701,7 @@ def set_value(
     delay: DelayOption = None,
     dry_run: DryRunOption = False,
     verify: VerifyOption = False,
+    human: HumanOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
     """Assign a value atomically, without keystrokes.
@@ -632,7 +711,7 @@ def set_value(
     value = _required(value, "--value")
     config = _config(use, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
     selector = _require_selector(id, role, name, exact, nth, window)
-    _run([SetValueAction(selector=selector, value=value)], config, verbose)
+    _run([SetValueAction(selector=selector, value=value)], config, verbose, human=human)
 
 
 app.command("focus")(_element_command(FocusAction, "Give keyboard focus to an element."))
@@ -660,6 +739,7 @@ def batch(
     delay: DelayOption = None,
     dry_run: DryRunOption = False,
     verify: VerifyOption = False,
+    human: HumanOption = False,
     verbose: VerboseOption = 0,
 ) -> None:
     """Run a batch of actions over one connection."""
@@ -682,7 +762,7 @@ def batch(
         continue_on_error=continue_on_error,
         verbose=verbose,
     )
-    _run(actions, config, verbose)
+    _run(actions, config, verbose, human=human)
 
 
 def _read_file(source: str) -> str:

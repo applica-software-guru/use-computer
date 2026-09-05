@@ -3,7 +3,7 @@ title: "Agent Skill"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.3"
+version: "1.4"
 ---
 
 # Agent Skill
@@ -39,6 +39,10 @@ content is part of the specification, not a README:
    conclusion from a correct answer, so each one has to name its own escape hatch.
 6. **What the errors mean** — ambiguity hands back candidates to choose between; no match is the
    signal to switch to vision, and it already carries the screenshot path.
+
+It must **not** teach `--human`. That flag exists for a person reading a terminal, and an agent
+that reached for it would break its own parsing — the skill is the place that mistake gets made
+once and copied forever.
 
 `x-skill-version` bumps whenever that guidance changes, so `skill status` reports installed copies
 as outdated instead of leaving agents on stale instructions. The `description` line has to keep

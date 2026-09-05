@@ -413,3 +413,63 @@ def test_a_candidate_name_keeps_its_brackets(
     result = invoke(runner, "click", "--role", "button")
     assert result.exit_code == EXIT_FAILURE
     assert "[draft] Send" in strip_ansi(result.stderr)
+
+
+# --- a view for the person running it -------------------------------------------------------------
+
+
+def test_human_prints_columns_and_no_json(
+    runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
+) -> None:
+    write_config(CONFIG)
+    result = invoke(runner, "windows", "--human")
+    assert result.exit_code == EXIT_OK
+    out = strip_ansi(result.stdout)
+    assert out.startswith("id")  # the header, not a brace
+    assert "Conferma" in out
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(out)
+
+
+def test_human_prints_the_tree_bare(
+    runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
+) -> None:
+    write_config(CONFIG)
+    result = invoke(runner, "tree", "--human")
+    assert result.exit_code == EXIT_OK
+    out = strip_ansi(result.stdout)
+    assert out.startswith('# id role "name"')
+    assert '"Invia"' in out
+
+
+def test_human_summarises_an_action_in_one_line(
+    runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
+) -> None:
+    write_config(CONFIG)
+    result = invoke(runner, "click", "--role", "button", "--name", "Invia", "--human")
+    assert result.exit_code == EXIT_OK
+    out = strip_ansi(result.stdout).strip()
+    assert out.count("\n") == 0
+    assert "click button 'Invia' at 0/1/0" in out
+    assert "via the platform API" in out
+
+
+def test_under_human_an_error_leaves_stdout_empty(
+    runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
+) -> None:
+    # A reader scrolling back should not have to work out which stream said what.
+    write_config(CONFIG)
+    result = invoke(runner, "click", "--role", "button", "--human")
+    assert result.exit_code == EXIT_FAILURE
+    assert strip_ansi(result.stdout).strip() == ""
+    assert "AmbiguousNodeError" in strip_ansi(result.stderr)
+
+
+def test_without_the_flag_it_is_still_json(
+    runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
+) -> None:
+    # The contract holds for every invocation that does not ask for prose, and --human is never
+    # inferred from isatty(): agents run under a pty too.
+    write_config(CONFIG)
+    result = invoke(runner, "windows")
+    assert json.loads(result.stdout)["ok"] is True

@@ -3,7 +3,7 @@ title: "UI Tree"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "3.0"
+version: "3.1"
 ---
 
 # UI Tree
@@ -165,6 +165,12 @@ resolves with the menu closed, because summarising decides what to *report*, not
 is the whole point of operating an element through the platform.
 
 Measured: 73 nodes and 10,948 bytes become **24 nodes and 3,777 bytes**.
+
+## Reading it yourself
+
+`--human` prints the rendering bare, with no envelope around it — which is the point: that text was
+always the readable form, it was just addressed to somebody else. `windows --human` prints aligned
+columns instead of the packed line.
 
 ## `--full` is the escape hatch
 
