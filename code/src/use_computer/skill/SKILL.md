@@ -1,8 +1,8 @@
 ---
 name: use-computer
-description: Read and act on a GUI — the accessibility tree of what is on screen (roles, names, clickable boxes), then click, focus, toggle, expand, select, set a value, type, press keys, drag, scroll, screenshot. Locally or over VNC. Ask the tree first and use ui-locator's pixel coordinates only when the tree cannot see the element.
+description: Read and act on a GUI — the accessibility tree of what is on screen (roles, names, clickable boxes), then click, focus, toggle, expand, select, set a value, type, press keys, drag, scroll, screenshot. Locally or over VNC. Ask the tree first and use ui-locator's pixel coordinates only when the tree cannot see the element. Bring a window forward before aiming at it, and confirm what happened by re-reading, not by trusting the line.
 x-skill-id: use-computer
-x-skill-version: "4"
+x-skill-version: "5"
 ---
 
 # use-computer
@@ -28,8 +28,12 @@ and when you do, **crop to the node** rather than photographing the screen.
 
 ### How to move between them
 
-- `reason: unavailable` or `empty` — this application exposes nothing (Qt, Electron, canvas, games
-  do this). A screenshot is already attached to that answer. Go and look.
+- `reason: unavailable` or `empty` — this application exposes nothing (Qt, Electron, games do
+  this). A screenshot is already attached to that answer. Go and look. **A tree emptied by your
+  own `--depth` or by pruning is not this** — it says which limit did it, and carries no
+  screenshot, because the way back is the limit it names.
+- `?unexposed` on a node — the tree is fine and there is a region inside it the platform does not
+  describe. Look at *that region*, not the screen.
 - A selector matched nothing — same, and for the same reason. Do not try more selectors.
 - **The tree sees a node but cannot name it.** Two anonymous text fields, say. Do *not* photograph
   the screen: `screenshot --of <id>` crops to that node. The tree knows exactly *where*; only
@@ -41,11 +45,42 @@ and when you do, **crop to the node** rather than photographing the screen.
   - **Focus.** Click one of two identical fields, re-read the tree, and see which now says
     `!focused`.
 
+## What a result is worth
+
+**A result line reports what was attempted.** An accessibility API answers "I invoked that
+action", never "the application did something", and an application is free to ignore it. No
+platform offers the second answer, so this gap is permanent — not a bug waiting to be fixed.
+
+An agent that believes every line pays for it. One measured session took fifteen commands for work
+that needed three, and every detour came from a report that was true and meant nothing:
+
+| It said | It was |
+| --- | --- |
+| `click radio 'Dark Brown' … via the platform API` | the colour never changed |
+| `…-node.png 1920x885 of 0/0/2` | a picture of a different application |
+| `no tree here (empty)` | sixty nodes, read a second earlier |
+
+Three habits, and they cost almost nothing:
+
+- **`[actions]` is what the platform will accept, not what will work.** A colour swatch that
+  advertises `[click,focus,select]` accepts `click` and does nothing with it. When a result and
+  the screen disagree, **try another action on the same node** — `select` where you tried `click`,
+  or `--via coordinate` — before reaching for vision. `click` now prefers `select` on a `radio`,
+  `listitem`, `option`, `treeitem`, `tab` or `menuitem`, which covers the common case.
+- **Confirm by re-reading, not by diffing.** After an element action, `tree` says *what* the state
+  is now. `--verify` only ever says that some pixels moved: it has a floor below which it says
+  nothing, and it cannot tell your click from a clock.
+- **A coordinate enters whatever window is in front.** Pass `--window` and the tool brings the
+  right one forward first. Without it, a click aimed at one application lands in another and
+  reports a perfectly ordinary success.
+
 ## The ladder
 
 Take the highest rung you can reach. Each one is cheaper, faster and more accurate than the one
 below it.
 
+0. **`use-computer activate --window "..."`** — put the window you mean in front, before any
+   coordinate goes near it. Cheap, idempotent, and a no-op when it is already there.
 0. **`use-computer windows`** — what is open. A dozen windows cost about 1.4 KB; a single
    window's tree costs fifteen times that. Make this call first: it gives you the `--window` value
    everything else needs, and tells you which window `focused` will resolve to.
@@ -132,7 +167,7 @@ The tree arrives **rendered**, in the `text` field — one line per node, with a
 costs 39% of the tokens the object form does, which is why it is the default:
 
 ```
-# id role "name" !states [actions] x,y wxh +offscreen
+# id role "name" !states [actions] x,y wxh +offscreen ?unexposed
 0 window "Conferma" !modal 0,0 1920x1038
   0/0 panel 0,32 1920x1006
     0/0/0/0 menu "File" [click,select] 0,32 37x28 +5
@@ -151,6 +186,7 @@ Read a line left to right:
 - **`x,y wxh`** — the box, in actuation units. To click it by coordinate aim at its centre,
   `x + w/2, y + h/2`, with `--space actuation`.
 - **`+5`** — five descendants are off screen. See below.
+- **`?unexposed x,y wxh`** — the platform describes nothing in that region. See below.
 - Indentation is depth, and it is also in the id. Either will do.
 
 `--format json` gives you `root` as nested objects instead, if you would rather parse than read.
@@ -170,6 +206,33 @@ check for these before concluding anything is missing:
   read its contents; a terminal or an editor would otherwise send you its entire buffer.
 
 `--full` turns all three off at once.
+
+## A rich tree with a hole in it
+
+The two clean states — the tree answers, or it is empty and hands you a picture — are not the
+common case. The common case is a full, correct tree around a region the platform is not
+describing:
+
+```
+0/0/2 panel 0,106 1920x885 ?unexposed 163,106 1757x885
+```
+
+That panel is 1920 px wide and its only child covers 163. The rest is a **canvas**, and it is in no
+tree, under `--full` either. Without the marker the tree looks complete, which is worse than
+looking empty.
+
+`?unexposed` is the normal condition of a drawing program, a map, a chart, a game, a PDF view, a
+video surface. It is not an error and there is nothing to expand. It is the cue to switch to
+pixels **for that region only**:
+
+```bash
+use-computer screenshot --window "Drawing" --of 0/0/2   # look at just the canvas
+use-computer drag --from-x 666 --from-y 660 --to-x 666 --to-y 545 --window "Drawing"
+```
+
+Everything around it stays addressable by name — the tools, the menus, the colours — so a canvas
+application is usually **structure for the chrome, coordinates for the canvas**, not vision for
+the whole window.
 
 ## When the tree cannot name something
 
@@ -209,7 +272,10 @@ use-computer show-menu --id 0/1/4
 several match. `--window` takes `focused` (default), `all`, a window title, a window **id**, or
 `@1234` for a pid. `collapse` closes what `expand` opened.
 
-**`--via` chooses which rung**, and is the one flag worth understanding:
+**`--via` chooses which rung**, and is the one flag worth understanding. It exists on the actions
+that have both forms — `click`, `double-click`, `right-click`, `scroll` — and **not** on
+`focus`, `toggle`, `expand`, `collapse`, `select`, `set-value` or `show-menu`, which have no
+coordinate form at all. Passing it there is a usage error, not a preference:
 
 - `--via auto` (default) — the platform API if the node supports it, otherwise a click at its
   centre. Almost always right.
@@ -219,6 +285,9 @@ several match. `--window` takes `focused` (default), `all`, a window title, a wi
   only respond to genuine input: hover states, drag handles, canvases.
 
 `--delay SECONDS` waits after each action, for an application that needs a moment to catch up.
+
+When `--via auto` drops to a coordinate, the node's window is brought forward first — a coordinate
+only means anything in the window it was measured in.
 
 **Pass `--id` together with `--role` and `--name`** as they came out of `tree`. The id alone is
 just a path, and paths shift when a row is inserted above; with the role and name it is checked,
@@ -239,16 +308,25 @@ visibly in the box but the form rejects it, `focus` the field and `type` instead
 Still fully supported, and the right thing to do when the tree cannot see your target:
 
 ```bash
-use-computer click --x 120 --y 340 --use staging
-use-computer double-click --x 120 --y 340 --use staging
-use-computer right-click --x 120 --y 340 --use staging
-use-computer move --x 120 --y 340 --use staging
-use-computer drag --from-x 10 --from-y 20 --to-x 300 --to-y 400 --use staging
-use-computer scroll --amount 3 --direction down --use staging
-use-computer type --text "hello world" --use staging
-use-computer key ctrl+s --use staging
-use-computer screenshot --use staging              # writes a file, prints its path
+use-computer activate --window "Drawing"           # first, if you mean a particular window
+use-computer click --x 120 --y 340 --window "Drawing"
+use-computer double-click --x 120 --y 340 --window "Drawing"
+use-computer right-click --x 120 --y 340 --window "Drawing"
+use-computer move --x 120 --y 340 --window "Drawing"
+use-computer drag --from-x 10 --from-y 20 --to-x 300 --to-y 400 --window "Drawing"
+use-computer scroll --amount 3 --direction down --window "Drawing"
+use-computer type --text "hello world"
+use-computer key ctrl+s
+use-computer screenshot                            # writes a file, prints its path
 ```
+
+**`--window` on a coordinate action brings that window forward before the coordinate is sent.**
+Pass it whenever you mean a particular window, which is nearly always. Without it the coordinate
+goes wherever the pointer already is — that is what a bare coordinate has always meant, and it is
+how a click aimed at a canvas ends up selecting text in a terminal.
+
+`type` and `key` take no `--window`: they go to whatever holds the keyboard focus. `activate` or
+`focus` is how you decide what that is.
 
 `type` sends literal text. `ctrl+a` given to `type` types seven characters — use `key` for
 shortcuts. `type` and `key` go to whatever holds focus; they take no element. Use `focus` first.
@@ -287,6 +365,10 @@ echo '[
 ]' | use-computer - --use laptop
 ```
 
+Action names take either spelling — `set-value` or `set_value`, `double-click` or `double_click` —
+so what you type at the shell works inside a batch. An unknown one comes back as a sentence naming
+the nearest match.
+
 `batch` is the default command, so `use-computer -` and `use-computer actions.json` work. A
 batch stops at the first failure and reports `failed_index`, so you can resume from a known
 point. `--continue-on-error` runs the rest anyway.
@@ -309,16 +391,21 @@ does not exist.
 A click that lands on nothing looks exactly like a click that worked. With `--verify` (or
 `"verify": true` on one action) each action reports:
 
-```json
-"change": {"changed": true, "magnitude": 0.18, "threshold": 0.002, "bbox": [40,120,600,400]}
 ```
+click at (200, 200) — changed 604x312 at 40,120 — 41 ms
+```
+
+**The box, not a percentage.** A box can be compared against what you expected: `604x312` is a
+dialog, `12x18` in a corner is a clock. Judge it against the change you were trying to cause.
 
 **`--verify` also gives you the screenshot taken after the action**, at the `screenshot` path in
 the same result. It captured that screen to do the comparison, so you already paid for it: do not
 follow a verified action with a `screenshot` call. That is the round trip verify exists to save.
 
-- `changed: false` after a click → the coordinate was probably stale. **Ask ui-locator again.
-  Do not click the same pixel twice.**
+- `unchanged` after a click → the coordinate was probably stale. **Ask ui-locator again. Do not
+  click the same pixel twice.** But check the obvious first: was the right window in front?
+- A box much smaller than the change you intended is the same signal. A click meant to open a
+  dialog that reports `12x18 at 1904,8` moved a clock, not a dialog.
 - An action performed through the accessibility API (`"via": "action"`) moves no pointer and paints
   no hover state, so it changes fewer pixels than the same click would. A small `magnitude` there
   is **not** failure. When you acted on an element, re-run `tree` instead: it tells you *what*
@@ -363,6 +450,10 @@ of an element action is also the cheapest way to check a selector is unambiguous
   screenshots and coordinates. Otherwise the message names exactly what to install: an extra on
   Windows and macOS, and on Linux the distro packages plus a `--system-site-packages` virtualenv,
   because the extra does not help there.
+- **`AmbiguousWindowError` on `focused`** — several windows claim to be active, which on Linux
+  means the platform reports it per application and cannot say which is on top. Read `windows` and
+  pass `--window ID`. When it is ambiguous, `windows` shows **no** `*` at all rather than a
+  guess — an empty column is the answer, not a missing one.
 - **`BackendNotAvailableError`** — the extra is not installed. The message names it.
 - **Local backend not enabled** — the `local` backend controls the user's own machine and needs
   an explicit opt-in. Tell the user to set `allow-local = true` in the profile; do not work
@@ -373,8 +464,8 @@ of an element action is also the cheapest way to check a selector is unambiguous
 
 ## Configuration
 
-`use-computer config show` prints every resolved value, the layer it came from, and the exact
-environment variable that would override it. Run it first when a profile behaves unexpectedly.
+`use-computer config show` prints every resolved value, the layer it came from, its source and the
+exact environment variable that would override it, as aligned lines. Run it first when a profile behaves unexpectedly.
 
 If there is no config at all, you can create one without a human:
 

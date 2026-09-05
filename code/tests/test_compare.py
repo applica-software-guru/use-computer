@@ -58,3 +58,31 @@ def test_a_dialog_sized_change_clears_the_default_threshold() -> None:
     report = compare(shot((0, 0, 0)), patched((0, 0, 0), (255, 255, 255), (200, 150)))
     assert report.changed is True
     assert report.bbox is not None
+
+
+def test_a_thin_stroke_on_a_full_screen_is_a_change() -> None:
+    """The case the previous metric got wrong, and the reason this one exists.
+
+    A drawn line, a ticked checkbox, an incremented spinner: all under 0.2% of a 1920x1080 screen,
+    all reported `unchanged` -- and `unchanged` tells an agent to throw its coordinate away and pay
+    for vision.
+    """
+    import io
+
+    from PIL import Image
+
+    def screen(draw: bool) -> Screenshot:
+        image = Image.new("RGB", (1920, 1080), (255, 255, 255))
+        if draw:
+            for offset in range(4):
+                for x in range(300, 500):
+                    image.putpixel((x, 400 + offset), (90, 60, 30))
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        return Screenshot(data=buffer.getvalue(), width=1920, height=1080)
+
+    report = compare(screen(False), screen(True))
+    assert report.changed is True
+    assert report.bbox is not None
+    left, top, right, bottom = report.bbox
+    assert right - left > 100  # and the box is what says a stroke happened, not a caret

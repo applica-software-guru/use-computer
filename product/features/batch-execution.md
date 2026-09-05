@@ -2,8 +2,8 @@
 title: "Batch Execution"
 status: synced
 author: ""
-last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.2"
+last-modified: "2026-09-05T12:40:00.000Z"
+version: "2.0"
 ---
 
 # Batch Execution
@@ -33,6 +33,32 @@ index failed, so the agent can resume from a known point. `--continue-on-error` 
 anyway, for independent actions.
 
 Exit code is 0 only if every attempted action succeeded.
+
+## An action is spelled the way the CLI spells it
+
+The CLI command is `set-value`; the batch takes `set_value`. Same action, two spellings, and
+nothing said so:
+
+```
+$ echo '[{"action":"set-value", …}]' | use-computer -
+error: - is not a valid action list: 1 validation error for
+list[tagged-union[MoveAction,function-after[_one_target(), ClickAction],…
+```
+
+Four hundred characters of internal union, naming every action type except the one the caller
+should have written.
+
+Both spellings are accepted — `set-value` and `set_value`, `double-click` and `double_click`,
+`right-click` and `right_click` — because an agent that has just read `use-computer set-value
+--help` has no reason to expect a different name three lines later. And an unrecognised action is
+one sentence that names the input and the nearest match:
+
+```
+error: unknown action 'set-valeu' at index 1. Did you mean 'set-value'?
+```
+
+A parser error is a message to a caller who is mid-task and cannot see the code. It says what was
+wrong, where, and what to write instead.
 
 ## Result
 

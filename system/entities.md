@@ -2,8 +2,8 @@
 title: "Entities"
 status: synced
 author: ""
-last-modified: "2026-09-05T00:00:00.000Z"
-version: "2.3"
+last-modified: "2026-09-05T12:40:00.000Z"
+version: "3.0"
 ---
 
 # Entities
@@ -68,6 +68,11 @@ One element of the accessibility tree:
 - `actions: tuple[str, ...]` — the action names this node supports; empty means it can only be
   clicked by coordinate
 - `box: Box`, `center: Coordinate`
+- `unexposed: Box | None` — the region of this node's own box that its children do not account
+  for: where the platform is describing nothing, which is where a canvas lives. Computed from
+  positioned children only, set when the largest uncovered strip is at least 25% of the node and at
+  least 10,000 square pixels, and `None` on a node with no positioned children — a leaf is not a
+  container that failed to describe itself
 - `children: tuple[UINode, ...]`
 
 ### WindowsResult *(frozen)*
@@ -79,6 +84,10 @@ populated under `--format json`. Symmetrical with `TreeResult`, so the two reads
 
 One entry of what `windows` returns: `id`, `title: str | None`, `role`, `app: str | None`,
 `pid: int | None`, `box: Box`, `active: bool`.
+
+`active` is true for **at most one** window in a list: it answers which window `--window focused`
+resolves to, so it is that decision, made once. A platform that reports `focused` per application
+marks several at a time, which is not an answer.
 
 `app` is the application the window belongs to. Without it a candidate list is unreadable: two
 windows both titled "ChatGPT" are told apart by what they belong to, not by the title that made
@@ -96,6 +105,10 @@ What to snapshot: `kind: focused | all | title | pid` with an optional `value`. 
 
 An enum: `unavailable` | `denied` | `empty`. Why a tree could not be returned — no provider for
 this platform or backend, the OS refused the permission, or the application exposes nothing.
+
+All three describe **the application or the platform**. A limit the caller asked for is never one of
+them: a tree emptied by `--depth`, by pruning or by the node budget names that limit instead,
+because `empty` is what tells an agent to stop reading trees and pay for vision.
 
 ### TreeResult *(frozen)*
 
@@ -126,11 +139,19 @@ A discriminated union on `action`, with one variant per member of the action set
 `ScrollAction`, `TypeAction`, `KeyAction`, `ScreenshotAction` (which also carries `of`, `pad` and `window` for cropping to an element),
 `TreeAction`, `FocusAction`,
 `ToggleAction`, `ExpandAction`, `CollapseAction`, `SelectAction`, `SetValueAction`,
-`ShowMenuAction`, `WindowsAction`.
+`ShowMenuAction`, `WindowsAction`, `ActivateAction`.
 
 Fields common to all: `delay: float | None`, `verify: bool`.
 Positional variants carry `Coordinate`s; `TypeAction` carries `text` and an optional rate;
 `KeyAction` carries a `KeyCombo`; `SetValueAction` carries `value`.
+
+`ActivateAction` carries a `TreeScope` and nothing else: its target is a window, not an element and
+not a point. `MoveAction`, `ClickAction`, `DoubleClickAction`, `RightClickAction`, `DragAction` and
+`ScrollAction` carry an optional `window: TreeScope | None` used when they are addressing a
+coordinate — the window that coordinate belongs to, brought forward before it is sent.
+
+The discriminator accepts the hyphenated CLI spelling as well as the underscored one, so
+`set-value` and `set_value` name the same variant.
 
 Element-addressable variants carry `selector: NodeSelector | None` and `via: Via`.
 `ClickAction`, `DoubleClickAction`, `RightClickAction` and `ScrollAction` accept **either** a
@@ -152,6 +173,13 @@ boundary.
 
 The outcome of change detection: `changed: bool`, `magnitude: float` (fraction of differing
 pixels), `threshold: float`, `bbox: tuple[int, int, int, int] | None`.
+
+`bbox` is present whenever `changed` is true, and it is what the text form reports: a box can be
+compared against what the agent expected to happen, and a percentage cannot. It is computed before
+the verdict, because it is what decides — `changed` is true when the box's **longest side** reaches
+16 screenshot pixels, or the fraction clears the threshold. Extent rather than a pixel count keeps
+a drawn stroke and a ticked checkbox from being reported as nothing, which is the error that costs
+an agent a correct coordinate, while a 2x8 caret stays noise.
 
 ### ActionResult *(frozen)*
 

@@ -13,11 +13,12 @@ and tests against a literal string.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
 from use_computer.tree import UINode, WindowInfo
 
-TREE_LEGEND = '# id role "name" !states [actions] x,y wxh +offscreen'
+TREE_LEGEND = '# id role "name" !states [actions] x,y wxh +offscreen ?unexposed'
 WINDOWS_LEGEND = '# id app role "title" pid x,y wxh *active'
 
 
@@ -44,6 +45,9 @@ def _node_line(node: UINode, depth: int) -> str:
     parts.append(f"{box.x},{box.y} {box.width}x{box.height}")
     if node.offscreen_children:
         parts.append(f"+{node.offscreen_children}")
+    if node.unexposed is not None:
+        blind = node.unexposed
+        parts.append(f"?unexposed {blind.x},{blind.y} {blind.width}x{blind.height}")
     return " ".join(parts)
 
 
@@ -123,10 +127,43 @@ def windows_for_a_reader(entries: Sequence[WindowInfo]) -> str:
     return _columns(rows, ["id", "app", "role", "title", "pid", "box", "active"])
 
 
+def _plain(value: Any) -> str:
+    """A setting as the user would type it -- an enum prints its value, not its repr."""
+    if value is None:
+        return ""
+    return str(getattr(value, "value", value))
+
+
+def config(payload: Mapping[str, Any]) -> str:
+    """`config show`, as lines.
+
+    Named first when a profile misbehaves, so the shape it answers in matters: two kilobytes on
+    one line is the worst possible reply to "why is this profile behaving like that".
+    """
+    values = payload.get("values") or {}
+    rows = [
+        [
+            key,
+            _plain(entry.get("value")),
+            str(entry.get("layer") or ""),
+            str(entry.get("env") or ""),
+        ]
+        for key, entry in sorted(values.items())
+    ]
+    lines = [_columns(rows, ["key", "value", "layer", "env"])]
+    for label in ("profile", "config-file", "global-config-file", "project-root"):
+        if payload.get(label) is not None:
+            lines.append(f"{label}: {payload[label]}")
+    warnings = payload.get("warnings") or []
+    lines.extend(f"warning: {text}" for text in warnings)
+    return "\n".join(lines)
+
+
 __all__ = [
     "TREE_LEGEND",
     "WINDOWS_LEGEND",
     "tree",
     "windows",
     "windows_for_a_reader",
+    "config",
 ]

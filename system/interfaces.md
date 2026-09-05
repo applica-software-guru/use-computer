@@ -2,8 +2,8 @@
 title: "Interfaces"
 status: synced
 author: ""
-last-modified: "2026-09-05T00:00:00.000Z"
-version: "3.1"
+last-modified: "2026-09-05T12:40:00.000Z"
+version: "4.0"
 ---
 
 # Interfaces
@@ -16,16 +16,27 @@ subcommands, implemented by rewriting `argv` in the entry point.
 ### Action commands
 
 ```
-use-computer move        --x INT --y INT
-use-computer click       [--x INT --y INT] [--button left|right|middle]
-use-computer double-click [--x INT --y INT]
-use-computer right-click  [--x INT --y INT]
-use-computer drag        --from-x INT --from-y INT --to-x INT --to-y INT
+use-computer move        --x INT --y INT [--window SCOPE]
+use-computer click       [--x INT --y INT] [--button left|right|middle] [--window SCOPE]
+use-computer double-click [--x INT --y INT] [--window SCOPE]
+use-computer right-click  [--x INT --y INT] [--window SCOPE]
+use-computer drag        --from-x INT --from-y INT --to-x INT --to-y INT [--window SCOPE]
 use-computer scroll      --amount INT [--direction up|down|left|right] [--x INT --y INT]
+                         [--window SCOPE]
 use-computer type        --text STR [--rate FLOAT]
 use-computer key         COMBO
 use-computer screenshot  [--out PATH] [--of NODE_ID] [--pad INT] [--window SCOPE]
+use-computer activate    --window SCOPE
 ```
+
+`--window` on a **coordinate** action names the window the coordinate belongs to, and that window
+is brought forward before the coordinate is sent. Omitted, the coordinate goes wherever the pointer
+already is, which is what a bare coordinate has always meant. `type` and `key` take no `--window`:
+they target the focus, and `activate` is how the focus is moved to a window.
+
+`activate` is the only command whose target is a window rather than an element or a point. It
+succeeds when the window is already in front (a no-op), and fails naming the window when nothing in
+it can take focus.
 
 ### Element commands
 
@@ -64,7 +75,7 @@ use-computer batch  (PATH | -)  [--continue-on-error]
 use-computer config init [--backend local|vnc] [--profile NAME]
                          [--host HOST] [--port PORT] [--allow-local]
                          [--dir PATH] [--no-probe] [--force]
-use-computer config show
+use-computer config show [--format text|json]
 use-computer skill  install|update|remove|status
                     [--scope user|project|agents|claude] [--dir PATH] [--force]
 ```
@@ -74,9 +85,31 @@ use-computer skill  install|update|remove|status
 `--use PROFILE`, `--dry-run`, `--verify`, `--space screenshot|actuation`, `--delay SECONDS`,
 `-v/-vv`, `--format text|json`, `--version`.
 
+`--version` and `config show` obey `--format` like everything else: text by default
+(`use-computer 0.2.2`, and aligned `key  value  layer  source` lines), the object under
+`--format json`. A command that answers in JSON while stdout is text makes the contract worth what
+its least consistent command is worth.
+
 Text is aligned columns for `windows`, the rendering for `tree`, and one line per action for
-everything else — the matched node, the rung taken, the duration. A `screenshot` prints its path,
-because the path is the answer. Errors are on stderr and stdout stays empty for the action that
+everything else — the matched node, the rung taken, the duration, **and the payload of the action
+itself**:
+
+```
+key ctrl+z — 125 ms
+type 78 chars "/home/you/Desktop/workspace/20260905T140000-al…" — 2341 ms
+drag (666, 660) → (666, 545) — 665 ms
+move (666, 660) — 101 ms
+click toggle 'Menu' at 0/0/3/0/0/0/0 via a coordinate (25, 1015) — 484 ms
+activated window 'albero.png ~ Line' 0/37/0 — 210 ms
+screenshot …/20260905T115147.490Z-screenshot.png 1920x1080
+click at (200, 200) — changed 604x312 at 40,120 — 41 ms
+```
+
+A line is the only record of an action that cannot be read back off the screen, so it names the key
+combination, the typed text (clamped, with its character count), both ends of a drag, and the
+coordinate actually sent after scaling. `--verify` reports the changed **box**, not a percentage
+that rounds a real change to `0%`. A `screenshot` prints its path and its size,
+because the path is the answer and the size is not available anywhere else. Errors are on stderr and stdout stays empty for the action that
 failed.
 
 `--verify` writes the after-screenshot to a file and reports its path in `screenshot`, so an agent
@@ -151,6 +184,11 @@ The `windows` field of the result. By default it carries a rendering:
 ]}
 ```
 
+**`active` is true for at most one window.** It answers "which window does `--window focused`
+resolve to", so it is that decision made once, not a copy of a platform flag. AT-SPI reports
+`focused` per application, which marks several windows at once; that is not an answer and is not
+passed through. When it cannot be determined, no window is marked.
+
 Measured at 119 bytes a window. It must survive an application that will not answer on the
 accessibility bus: that application is missing from the list, the list still comes back.
 
@@ -160,7 +198,7 @@ The `tree` field of the result. By default `root` is absent and the tree arrives
 
 ```json
 {
-  "text": "# id role \"name\" !states [actions] x,y wxh +offscreen\n0 window \"Conferma\" !modal 0,0 1920x1038\n  0/2/1/3 button \"Invia\" [click,focus] 412,260 88x32",
+  "text": "# id role \"name\" !states [actions] x,y wxh +offscreen ?unexposed\n0 window \"Conferma\" !modal 0,0 1920x1038\n  0/2/1/3 button \"Invia\" [click,focus] 412,260 88x32",
   "root": null,
   "node_count": 24,
   "truncated": false,
@@ -175,6 +213,16 @@ carries every field, and spends none of them on syntax. The escaping of the newl
 the 1,040 tokens saved, which is what keeping `stdout is JSON and nothing else` is worth.
 
 `truncated`, `node_count` and `reason` stay structured: they are read by code, not by a reader.
+
+`reason` describes **the application**, never a limit the caller asked for. A tree emptied by
+`--depth`, by pruning or by the node budget is reported as that limit and not as `empty`, because
+`empty` is the signal to abandon the tree and pay for vision.
+
+A node carries `unexposed: [x, y, w, h]` when its children do not account for its own area — the
+region the platform is not describing, which is where a canvas lives. It is computed from
+positioned children only, reported when the largest uncovered strip is at least 25% of the node and
+at least 10,000 square pixels, and never suppressed by `--full`: it is not an abbreviation, it is a
+statement about the platform's coverage.
 
 With `--format json`:
 
@@ -264,7 +312,17 @@ the terminal executing `--window "X"` matches X.
 
 ### Batch input JSON
 
-A JSON array of action objects, discriminated on `action`:
+A JSON array of action objects, discriminated on `action`. The discriminator accepts **the CLI's
+own spelling as well as the underscored form** — `set-value` and `set_value`, `double-click` and
+`double_click`, `right-click` and `right_click` — because an agent that has just read
+`use-computer set-value --help` has no reason to expect a different name here. An unrecognised
+action is one sentence naming the input, its index and the nearest match, never a dump of the
+internal union:
+
+```
+error: unknown action 'set-valeu' at index 1. Did you mean 'set-value'?
+```
+
 
 ```json
 [
@@ -355,6 +413,7 @@ class AccessibilityProvider(Protocol):
     def windows(self) -> list[WindowInfo]: ...
     def snapshot(self, scope: TreeScope, depth: int) -> UINode: ...
     def perform(self, node_id: str, action: str, value: str | None) -> bool: ...
+    def activate(self, window_id: str) -> bool: ...
     def close(self) -> None: ...
 ```
 
@@ -369,6 +428,20 @@ it loses that application, never the list.
 `None` because several of these APIs report failure by returning false rather than raising, and a
 provider that only catches exceptions would report success for an action that did nothing at all.
 A `False` return is what triggers the fallback to a coordinate click under `--via auto`.
+
+**`True` means the action was invoked, not that the application did anything with it.** No platform
+offers the second answer. A GTK colour swatch advertises `click`, accepts it, returns true and does
+nothing; `select` is the action that carries its meaning. So `perform` is honest about what it
+knows, and the layer above it does two things it can do: a `click` command prefers the `select`
+action on a node whose role makes selection the activation (`radio`, `listitem`, `option`,
+`treeitem`, `tab`, `menuitem`), and where the action should have left a trace on the node —
+`checked`, `selected` — the node is re-read and the result says when nothing moved.
+
+`activate` brings a window forward and gives it keyboard focus. A window object exposes no actions
+on any of the three platforms, so the general implementation is `grab_focus` on the first focusable
+descendant, which raises the top-level window on all of them; macOS prefers `AXRaise` on the window
+itself where it is accepted. It returns false when nothing in the window can take focus, and is a
+no-op when the window is already in front.
 
 Construction raises `UITreeUnavailableError` naming the extra — and, on Linux, the system package
 as well. The provider is chosen by the running platform, never by configuration.

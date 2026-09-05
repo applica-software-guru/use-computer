@@ -124,13 +124,13 @@ class AmbiguousWindowError(UseComputerError):
     this refuses rather than picking the first, like everything else here.
     """
 
-    def __init__(self, wanted: str, candidates: Sequence[WindowInfo]) -> None:
+    def __init__(
+        self, wanted: str, candidates: Sequence[WindowInfo], hint: str | None = None
+    ) -> None:
         self.wanted = wanted
         self.candidates = tuple(candidates)
-        super().__init__(
-            f"{len(self.candidates)} windows match {wanted!r}; "
-            "use a longer title, or the window id from `windows`"
-        )
+        advice = hint or "use a longer title, or the window id from `windows`"
+        super().__init__(f"{len(self.candidates)} windows match {wanted!r}; {advice}")
 
 
 class ActionNotSupportedError(UseComputerError):

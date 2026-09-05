@@ -126,7 +126,31 @@ class AtspiProvider:
     # --- reading -----------------------------------------------------------------------------
 
     def windows(self) -> list[WindowInfo]:
-        return [info for info, _ in self._window_pairs()]
+        found = [info for info, _ in self._window_pairs()]
+        if any(info.active for info in found):
+            return found
+        # Nothing claims `active`. Some desktops only ever report `focused`, so fall back to it
+        # rather than returning a list with no mark at all -- but never mix the two: `focused` on
+        # this desktop marks the shell, which is not a window anybody wants to act in.
+        return [
+            info.model_copy(update={"active": info.id in self._focused_ids()})
+            for info in found
+        ]
+
+    def _focused_ids(self) -> frozenset[str]:
+        ids: set[str] = set()
+        try:
+            desktop = self._desktop()
+            for app_index, app in enumerate(self._children(desktop)):
+                try:
+                    for index, window in enumerate(self._children(app)):
+                        if "focused" in set(self._states(window)):
+                            ids.add(f"0/{app_index}/{index}")
+                except Exception:
+                    continue
+        except Exception:
+            return frozenset()
+        return frozenset(ids)
 
     def _window_pairs(self) -> list[tuple[WindowInfo, Any]]:
         """Every window, with the accessible it describes, so a match can be acted on."""
@@ -147,7 +171,7 @@ class AtspiProvider:
                                 app=app_name,
                                 pid=pid if pid > 0 else None,
                                 box=self._box(window),
-                                active="active" in states or "focused" in states,
+                                active="active" in states,
                             ),
                             window,
                         )
@@ -262,7 +286,7 @@ class AtspiProvider:
 
     def _is_active(self, window: Any) -> bool:
         states = set(self._states(window))
-        return "active" in states or "focused" in states
+        return "active" in states
 
     #: AT-SPI reports an element that is not currently rendered at INT_MIN with a 1x1 size --
     #: the items of a closed menu, for instance. That is a sentinel, not a position, and letting
@@ -376,6 +400,15 @@ class AtspiProvider:
         for index in range(interface.get_n_actions()):
             if roles.atspi_action(interface.get_action_name(index) or "") == action:
                 return bool(interface.do_action(index))
+        return False
+
+    def activate(self, window_id: str) -> bool:
+        """AT-SPI offers no raise for a window.
+
+        A window accessible reports no actions at all -- verified: `It supports: none` -- so there
+        is nothing native to call here. False tells the caller to focus a descendant instead,
+        which is what actually moves `_NET_ACTIVE_WINDOW`.
+        """
         return False
 
     def close(self) -> None:

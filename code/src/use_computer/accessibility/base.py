@@ -50,6 +50,15 @@ class AccessibilityProvider(Protocol):
         nothing at all. ``False`` is what makes ``--via auto`` fall back to a coordinate click.
         """
 
+    def activate(self, window_id: str) -> bool:
+        """Bring a window forward, natively, if this platform has a way.
+
+        ``True`` means the window was raised. ``False`` is not a failure: it means this platform
+        offers no raise for a window object, and the caller should focus a descendant instead --
+        which raises the top-level window on all three. AT-SPI is the ``False`` case; a window
+        accessible there reports no actions at all.
+        """
+
     def close(self) -> None:
         """Release whatever the provider holds."""
 

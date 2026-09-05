@@ -88,3 +88,44 @@ def test_it_teaches_the_two_ways_of_knowing() -> None:
     text = skill()
     assert "Structure" in text and "Pixels" in text
     assert "screenshot --of" in text  # the cheap way down to vision
+
+
+def _options_of(command_name: str) -> set[str]:
+    root = typer.main.get_command(app)
+    command = getattr(root, "commands", {})[command_name]
+    return {opt for p in getattr(command, "params", []) for opt in p.opts if opt.startswith("--")}
+
+
+@pytest.mark.parametrize(
+    "command", ["click", "double-click", "right-click", "scroll"]
+)
+def test_the_skill_claims_via_only_where_via_exists(command: str) -> None:
+    # The skill called `--via` "the one flag worth understanding" and showed it as if it were
+    # universal. An agent following that gets a usage error mid-task, which is the exact failure
+    # a skill is supposed to prevent.
+    assert "--via" in _options_of(command)
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["focus", "toggle", "expand", "collapse", "select", "set-value", "show-menu"],
+)
+def test_the_element_only_actions_reject_via_and_the_skill_says_so(command: str) -> None:
+    assert "--via" not in _options_of(command)
+    assert command in skill()
+
+
+@pytest.mark.parametrize(
+    "command", ["move", "click", "double-click", "right-click", "drag", "scroll"]
+)
+def test_every_coordinate_action_can_name_its_window(command: str) -> None:
+    # The claim the skill now makes: pass --window and the tool brings that window forward.
+    assert "--window" in _options_of(command)
+
+
+def test_the_skill_teaches_what_a_result_is_worth() -> None:
+    text = skill()
+    # The permanent gap, not a bug list: an API says "I invoked that", never "it did something".
+    assert "attempted" in text
+    assert "?unexposed" in text
+    assert "activate" in declared_commands()

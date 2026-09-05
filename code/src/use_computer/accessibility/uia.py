@@ -167,6 +167,17 @@ class UiaProvider:
 
     # --- acting ------------------------------------------------------------------------------
 
+    def activate(self, window_id: str) -> bool:
+        """Windows has a native raise: `SetActive` on the top-level control."""
+        control = self._index.get(window_id)
+        if control is None:
+            return False
+        try:
+            return bool(control.SetActive())
+        except Exception:
+            # Not every control exposes it, and the caller has a working fallback.
+            return False
+
     def perform(self, node_id: str, action: str, value: str | None) -> bool:
         control = self._index.get(node_id)
         if control is None:

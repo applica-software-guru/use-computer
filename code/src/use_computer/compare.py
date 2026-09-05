@@ -23,10 +23,28 @@ from use_computer.coordinates import CoordinateSpace
 DEFAULT_THRESHOLD = 0.002
 
 #: Longest edge the images are reduced to before comparison.
-COMPARE_SIZE = 256
+#:
+#: 256 was too small, and the two numbers below are one decision with it. At 256 a 1920-wide screen
+#: is scaled by 0.13, so a 4 px stroke lands on half a pixel and averages away against the
+#: background before anything is counted.
+COMPARE_SIZE = 512
 
 #: Per-pixel greyscale delta counted as a difference.
 PIXEL_DELTA = 16
+
+#: Longest side, in screenshot pixels, that makes a change real regardless of the fraction.
+#:
+#: The fraction answers "how much of the screen moved", which is the wrong question for almost
+#: everything a UI does in response to a click: at 0.2% of 1920x1080 it ignores the first ~4,000
+#: pixels, so a drawn stroke, a ticked checkbox, an incremented spinner and a highlighted row all
+#: reported `unchanged` -- and this feature's advice on `unchanged` is to throw the coordinate away
+#: and pay for vision. The two errors are not symmetric: a false `changed` costs a look, a false
+#: `unchanged` costs the coordinate.
+#:
+#: Extent rather than a pixel count, because a count means different things on different images and
+#: cannot tell a thin wide stroke from a small blob. A caret is 2x8 and stays noise; a 200x4 stroke
+#: and a 16x16 checkbox are changes. That is the distinction, stated directly.
+MIN_CHANGE_EXTENT = 16
 
 
 class Screenshot(BaseModel):
@@ -134,21 +152,29 @@ def compare(
     differing = mask.histogram()[255]
     total = mask.width * mask.height
     magnitude = differing / total if total else 0.0
-    changed = magnitude > threshold
 
+    # The box is computed first, because it is what decides. It is also the only part of this an
+    # agent can act on: a box can be compared against what was expected to happen, a percentage
+    # cannot, and a real change of a few thousand pixels renders as `0%`.
     bbox = None
-    if changed:
-        raw = mask.getbbox()
-        if raw is not None:
-            scale_x = after.width / mask.width
-            scale_y = after.height / mask.height
-            bbox = (
-                int(raw[0] * scale_x),
-                int(raw[1] * scale_y),
-                int(raw[2] * scale_x),
-                int(raw[3] * scale_y),
-            )
-    return ChangeReport(changed=changed, magnitude=magnitude, threshold=threshold, bbox=bbox)
+    raw = mask.getbbox()
+    if raw is not None:
+        scale_x = after.width / mask.width
+        scale_y = after.height / mask.height
+        bbox = (
+            int(raw[0] * scale_x),
+            int(raw[1] * scale_y),
+            int(raw[2] * scale_x),
+            int(raw[3] * scale_y),
+        )
+    extent = max(bbox[2] - bbox[0], bbox[3] - bbox[1]) if bbox is not None else 0
+    changed = magnitude > threshold or extent >= MIN_CHANGE_EXTENT
+    return ChangeReport(
+        changed=changed,
+        magnitude=magnitude,
+        threshold=threshold,
+        bbox=bbox if changed else None,
+    )
 
 
 def _prepare(image: Image.Image) -> Image.Image:

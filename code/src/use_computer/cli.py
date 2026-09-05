@@ -27,6 +27,7 @@ from use_computer import render
 from use_computer.actions import (
     Action,
     ActionListAdapter,
+    ActivateAction,
     ClickAction,
     CollapseAction,
     DoubleClickAction,
@@ -47,6 +48,8 @@ from use_computer.actions import (
     TreeAction,
     TypeAction,
     WindowsAction,
+    check_action_names,
+    normalise_action_names,
 )
 from use_computer.config import (
     ResolvedConfig,
@@ -81,6 +84,9 @@ EXIT_USAGE = 2
 #: The command a bare invocation means. `use-computer actions.json` and `use-computer -` work.
 DEFAULT_COMMAND = "batch"
 
+#: How much typed text a result line carries. Enough to recognise it, not enough to become a log.
+TYPED_TEXT_LIMIT = 48
+
 app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
@@ -98,7 +104,9 @@ def _version_callback(value: bool) -> None:
     if value:
         from use_computer import __version__
 
-        _emit({"version": __version__})
+        # Text, like everything else. A contract is worth what its least consistent command is
+        # worth, and `--version` answering in JSON was the cheapest possible way to break it.
+        _write(f"use-computer {__version__}")
         raise typer.Exit(EXIT_OK)
 
 
@@ -177,14 +185,24 @@ def _required(value: Any, flag: str) -> Any:
 
 
 def _build(
-    kind: Any, selector: NodeSelector | None, via: Via, **fields: Any
+    kind: Any,
+    selector: NodeSelector | None,
+    via: Via,
+    *,
+    window: str | None = None,
+    **fields: Any,
 ) -> Action:
     """Construct an action from either a coordinate or an element -- never both.
 
     Choosing between them would be exactly the kind of silent reinterpretation this tool refuses
     to do with coordinate spaces, so a caller that gives both is told to pick one.
+
+    `--window` is not part of that choice: on a coordinate it names the window the coordinate
+    belongs to, which is brought forward before the coordinate is sent.
     """
     if selector is None:
+        if window is not None:
+            fields["window"] = window
         return kind(**fields)  # type: ignore[no-any-return]
     if fields.get("x") is not None or fields.get("y") is not None:
         _err.print(
@@ -194,6 +212,11 @@ def _build(
         raise typer.Exit(EXIT_USAGE)
     fields = {k: v for k, v in fields.items() if k not in ("x", "y", "space")}
     return kind(selector=selector, via=via, **fields)  # type: ignore[no-any-return]
+
+
+def _scope(window: str | None) -> TreeScope | None:
+    """`--window` as a scope. `None` keeps a bare coordinate meaning what it always meant."""
+    return TreeScope.parse(window) if window is not None else None
 
 
 def _selector(
@@ -248,7 +271,12 @@ def _say(template: str, **values: Any) -> None:
 
 def _emit(payload: Any) -> None:
     """stdout is JSON and nothing else."""
-    sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    _write(json.dumps(payload, ensure_ascii=False))
+
+
+def _write(text: str) -> None:
+    """stdout, unstyled. Never through rich: it soft-wraps and eats square brackets."""
+    sys.stdout.write(text + "\n")
     sys.stdout.flush()
 
 
@@ -311,6 +339,13 @@ def _text_lines(result: Any) -> str:
         if item.tree is not None:
             if item.tree.text:
                 chunks.append(item.tree.text)
+                if item.tree.limited_by:
+                    # Said, not implied: a tree with nothing under its root looks exactly like an
+                    # application that exposes nothing, and the two call for opposite moves.
+                    chunks.append(
+                        f"# nothing below the root: {item.tree.limited_by} emptied it, "
+                        "not the application"
+                    )
             elif item.tree.reason is not None:
                 shot = item.tree.screenshot
                 where = f"; screenshot at {shot.path}" if shot is not None else ""
@@ -327,10 +362,20 @@ def _text_lines(result: Any) -> str:
         if item.action.action == "screenshot" and item.screenshot is not None:
             # The path is the answer, and the only part of it worth any tokens.
             shot = item.screenshot
-            where = f" {shot.box[2]}x{shot.box[3]} of {shot.of}" if shot.box else ""
+            where = (
+                f" {shot.box[2]}x{shot.box[3]} of {shot.of}"
+                if shot.box
+                else f" {shot.width}x{shot.height}"
+            )
             chunks.append(f"{_shorten(shot.path, folder)}{where}")
             continue
-        what = item.action.action
+        if item.action.action == "activate" and item.activated:
+            chunks.append(
+                f"{'would activate ' if not item.performed else 'activated '}{item.activated}"
+                f" \u2014 {item.duration_ms:.0f} ms"
+            )
+            continue
+        what = item.action.action + _payload(item)
         if item.matched is not None:
             what += f" {item.matched.role}"
             if item.matched.name:
@@ -339,7 +384,9 @@ def _text_lines(result: Any) -> str:
         how = ""
         if item.via is not None:
             how = " via the platform API" if item.via.value == "action" else " via a coordinate"
-        elif item.resolved is not None:
+            if item.via.value != "action" and item.resolved is not None:
+                how += f" ({item.resolved.x}, {item.resolved.y})"
+        elif item.resolved is not None and item.resolved_from is None:
             how = f" at ({item.resolved.x}, {item.resolved.y})"
         done = "would " if not item.performed else ""
         # --verify exists to give feedback, so its answer belongs on the line. `unchanged` is the
@@ -347,11 +394,7 @@ def _text_lines(result: Any) -> str:
         # clicking the same wrong pixel forever.
         verified = ""
         if item.change is not None:
-            verified = (
-                f" \u2014 changed {item.change.magnitude:.0%}"
-                if item.change.changed
-                else " \u2014 unchanged"
-            )
+            verified = f" \u2014 {_changed(item.change)}"
         chunks.append(f"{done}{what}{how}{verified} \u2014 {item.duration_ms:.0f} ms")
         if item.screenshot is not None and item.screenshot.path is not None:
             # Already captured and already paid for. Saying where saves the agent asking again,
@@ -360,6 +403,44 @@ def _text_lines(result: Any) -> str:
 
     chunks.append(_summary(result, folder))
     return "\n".join(chunks)
+
+
+def _payload(item: Any) -> str:
+    """What this action actually did, on the line that is its only record.
+
+    `key` without its combination, `type` without its text, a `drag` with one of its two points:
+    each is blank in exactly the place an agent looks when the screen does not match its model.
+    Eleven such lines could not be reconstructed into what a batch had done.
+    """
+    action = item.action
+    name = action.action
+    if name == "key":
+        return f" {action.combo}"
+    if name == "type":
+        text = action.text
+        shown = text if len(text) <= TYPED_TEXT_LIMIT else text[: TYPED_TEXT_LIMIT - 1] + "\u2026"
+        # The count is what catches a truncated or a doubled paste; the text is what identifies it.
+        return f" {len(text)} chars {shown!r}"
+    if name == "drag" and item.resolved is not None and item.resolved_from is not None:
+        start, end = item.resolved_from, item.resolved
+        return f" ({start.x}, {start.y}) \u2192 ({end.x}, {end.y})"
+    if name == "move" and item.resolved is not None:
+        return f" ({item.resolved.x}, {item.resolved.y})"
+    return ""
+
+
+def _changed(change: Any) -> str:
+    """Where the screen changed, which is what an agent can act on.
+
+    A percentage cannot be compared against what was expected to happen, and rounds a real change
+    of a few thousand pixels to `changed 0%`, which reads as a denial.
+    """
+    if not change.changed:
+        return "unchanged"
+    if change.bbox is None:
+        return "changed"
+    left, top, right, bottom = change.bbox
+    return f"changed {right - left}x{bottom - top} at {left},{top}"
 
 
 def _shorten(path: Path | None, folder: Path | None) -> str:
@@ -457,6 +538,7 @@ def _run(
 def move(
     x: Annotated[int, typer.Option("--x", help="X coordinate.")],
     y: Annotated[int, typer.Option("--y", help="Y coordinate.")],
+    window: WindowOption = None,
     use: UseOption = None,
     space: SpaceOption = None,
     delay: DelayOption = None,
@@ -467,7 +549,9 @@ def move(
 ) -> None:
     """Move the pointer."""
     config = _config(use, space=space, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
-    _run([MoveAction(x=x, y=y, space=space)], config, verbose, fmt=format)
+    _run(
+        [MoveAction(x=x, y=y, space=space, window=_scope(window))], config, verbose, fmt=format
+    )
 
 
 @app.command()
@@ -494,7 +578,7 @@ def click(
     config = _config(use, space=space, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
     selector = _selector(id, role, name, exact, nth, window)
     _run(
-        [_build(ClickAction, selector, via, x=x, y=y, space=space, button=button)],
+        [_build(ClickAction, selector, via, window=window, x=x, y=y, space=space, button=button)],
         config,
         verbose,
         fmt=format,
@@ -523,7 +607,7 @@ def double_click(
     """Double-click an element or a coordinate."""
     config = _config(use, space=space, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
     selector = _selector(id, role, name, exact, nth, window)
-    action = _build(DoubleClickAction, selector, via, x=x, y=y, space=space)
+    action = _build(DoubleClickAction, selector, via, window=window, x=x, y=y, space=space)
     _run([action], config, verbose, fmt=format)
 
 
@@ -549,7 +633,7 @@ def right_click(
     """Click an element or a coordinate with the secondary button."""
     config = _config(use, space=space, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
     selector = _selector(id, role, name, exact, nth, window)
-    action = _build(RightClickAction, selector, via, x=x, y=y, space=space)
+    action = _build(RightClickAction, selector, via, window=window, x=x, y=y, space=space)
     _run([action], config, verbose, fmt=format)
 
 
@@ -560,6 +644,7 @@ def drag(
     to_x: Annotated[int | None, typer.Option("--to-x")] = None,
     to_y: Annotated[int | None, typer.Option("--to-y")] = None,
     button: Annotated[MouseButton, typer.Option("--button")] = MouseButton.LEFT,
+    window: WindowOption = None,
     use: UseOption = None,
     space: SpaceOption = None,
     delay: DelayOption = None,
@@ -575,7 +660,8 @@ def drag(
     to_y = _required(to_y, "--to-y")
     config = _config(use, space=space, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
     action = DragAction(
-        from_x=from_x, from_y=from_y, to_x=to_x, to_y=to_y, space=space, button=button
+        from_x=from_x, from_y=from_y, to_x=to_x, to_y=to_y, space=space, button=button,
+        window=_scope(window),
     )
     _run([action], config, verbose, fmt=format)
 
@@ -608,8 +694,8 @@ def scroll(
     _run(
         [
             _build(
-                ScrollAction, selector, via, amount=amount, direction=direction, x=x, y=y,
-                space=space,
+                ScrollAction, selector, via, window=window, amount=amount,
+                direction=direction, x=x, y=y, space=space,
             )
         ],
         config,
@@ -677,6 +763,26 @@ def screenshot(
     config = _config(use, verbose=verbose)
     action = ScreenshotAction(out=out, of=of, pad=pad, window=TreeScope.parse(window))
     _run([action], config, verbose, fmt=format)
+
+
+@app.command()
+def activate(
+    window: WindowOption = None,
+    use: UseOption = None,
+    delay: DelayOption = None,
+    dry_run: DryRunOption = False,
+    verify: VerifyOption = False,
+    format: FormatOption = OutputFormat.TEXT,
+    verbose: VerboseOption = 0,
+) -> None:
+    """Bring a window forward and give it keyboard focus."""
+    config = _config(use, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
+    _run(
+        [ActivateAction(window=_required(window, "--window"))],
+        config,
+        verbose,
+        fmt=format,
+    )
 
 
 # --- element commands ---------------------------------------------------------------------------
@@ -845,8 +951,12 @@ def batch(
     """Run a batch of actions over one connection."""
     raw = sys.stdin.read() if source == "-" else _read_file(source)
     try:
-        actions = ActionListAdapter.validate_json(raw)
-    except Exception as exc:
+        payload = normalise_action_names(json.loads(raw))
+        # Named before the union gets a chance: its own error is four hundred characters listing
+        # every variant except the one the caller should have written.
+        check_action_names(payload)
+        actions = ActionListAdapter.validate_python(payload)
+    except ValueError as exc:
         _say(
             "[red]error:[/red] {source} is not a valid action list: {exc}",
             source=source,
@@ -1070,13 +1180,21 @@ def _report_next_steps(kind: BackendKind, profile: str, needs_password: bool) ->
 
 
 @config_app.command("show")
-def config_show(use: UseOption = None) -> None:
+def config_show(
+    use: UseOption = None, format: FormatOption = OutputFormat.TEXT
+) -> None:
     """Print every resolved value, the layer it came from, and the variable that overrides it."""
     try:
         resolved = _config(use)
     except UseComputerError as exc:
         _fail(exc)
-    _emit(resolved.show())
+    payload = resolved.show()
+    if format is OutputFormat.JSON:
+        _emit(payload)
+        return
+    # This is the command named first when a profile misbehaves, so it is the worst one to answer
+    # with two kilobytes on one line.
+    _write(render.config(payload))
 
 
 # --- skill -------------------------------------------------------------------------------------
@@ -1162,6 +1280,7 @@ _COMMANDS = frozenset(
         "select",
         "set-value",
         "show-menu",
+        "activate",
         "batch",
         "config",
         "skill",

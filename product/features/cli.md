@@ -2,8 +2,8 @@
 title: "CLI"
 status: synced
 author: ""
-last-modified: "2026-09-05T00:00:00.000Z"
-version: "2.2"
+last-modified: "2026-09-05T12:40:00.000Z"
+version: "3.0"
 ---
 
 # CLI
@@ -38,6 +38,23 @@ use-computer skill install --scope project
 - **Exit codes**: `0` success, `1` failure, `2` bad usage. Unchanged, and the primary signal.
 
 `--format json` returns the envelope instead, for anyone piping into a parser.
+
+**Every command, without exception.** Two were left behind when the contract was inverted, and both
+matter more than most:
+
+```
+$ use-computer --version          → use-computer 0.2.2
+$ use-computer config show        → lines, not a 2 KB JSON object
+```
+
+`config show` is the command this documentation names **first** when a profile misbehaves, so it is
+the worst one to answer with a dense object. It keeps every value, its layer, its source and the
+environment variable that would override it — laid out as aligned lines, in the layer order it
+already documents. `--format json` still returns the machine form of both.
+
+A command that answers in JSON while stdout is meant to be text is not a small inconsistency: the
+contract is a promise an agent plans around, and it is worth exactly as much as its least
+consistent command.
 
 ### Every run ends with what the envelope carried
 

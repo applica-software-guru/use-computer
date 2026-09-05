@@ -193,3 +193,56 @@ def test_an_id_is_exact_and_is_tried_before_any_title() -> None:
 def test_no_window_matching_says_so() -> None:
     with pytest.raises(UITreeUnavailableError):
         resolve_window([window("0/1", "Ledger")], "Posta")
+
+
+def test_an_on_screen_subtree_is_not_counted_as_off_screen() -> None:
+    """GTK reports the tab holding a canvas at (-1, -1) while the canvas under it is visible.
+
+    Counting that as an off-screen descendant folded away the largest thing in the window.
+    """
+    from tests.fake_provider import node as make
+    from use_computer.selectors import summarise_offscreen
+
+    root = make(
+        "0",
+        "panel",
+        box=(0, 0, 900, 900),
+        children=(
+            make(
+                "0/0",
+                "tab",
+                box=(-1, -1, 0, 0),
+                children=(make("0/0/0", "panel", box=(10, 10, 880, 880)),),
+            ),
+        ),
+    )
+    summarised = summarise_offscreen(root)
+    assert summarised.offscreen_children == 0
+    assert summarised.children and summarised.children[0].id == "0/0"
+
+
+def test_a_closed_menu_is_still_counted_rather_than_expanded() -> None:
+    # The saving this exists for: 55 of 73 nodes in one measured window were closed menu items.
+    from tests.fake_provider import node as make
+    from use_computer.selectors import summarise_offscreen
+
+    root = make(
+        "0",
+        "menubar",
+        box=(0, 0, 900, 30),
+        children=(
+            make(
+                "0/0",
+                "menu",
+                "File",
+                actions=("click",),
+                box=(0, 0, 40, 30),
+                children=tuple(
+                    make(f"0/0/{i}", "menuitem", f"Item {i}", box=(0, 0, 0, 0)) for i in range(5)
+                ),
+            ),
+        ),
+    )
+    summarised = summarise_offscreen(root)
+    assert summarised.children[0].offscreen_children == 5
+    assert summarised.children[0].children == ()

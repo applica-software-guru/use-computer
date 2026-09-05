@@ -7,6 +7,7 @@ in actuation units and canonical key names.
 
 from __future__ import annotations
 
+from difflib import get_close_matches
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -48,7 +49,25 @@ class BaseAction(BaseModel):
         return None
 
 
-class _Positioned(BaseAction):
+class _InAWindow(BaseAction):
+    """An action whose coordinate belongs to a particular window.
+
+    A coordinate lands on whatever window is in front. That is what a bare coordinate has always
+    meant, and it is fine until the agent meant a particular window -- which is most of the time.
+    Naming it here is how the caller says so, and the window is brought forward before the
+    coordinate is sent. Measured: two drags aimed at a canvas selected text in a terminal instead,
+    and `--verify` then confirmed the wrong action with the wrong evidence.
+    """
+
+    window: TreeScope | None = None
+
+    @field_validator("window", mode="before")
+    @classmethod
+    def _parse_scope(cls, value: Any) -> Any:
+        return TreeScope.parse(value) if isinstance(value, str) else value
+
+
+class _Positioned(_InAWindow):
     """An action that may carry a coordinate. Omitting it acts where the pointer already is."""
 
     x: int | None = None
@@ -130,7 +149,7 @@ class RightClickAction(_PositionedOrSelected):
     action: Literal["right_click"] = "right_click"
 
 
-class DragAction(BaseAction):
+class DragAction(_InAWindow):
     action: Literal["drag"] = "drag"
     from_x: int
     from_y: int
@@ -297,6 +316,23 @@ class ShowMenuAction(_ElementAction):
     action: Literal["show_menu"] = "show_menu"
 
 
+class ActivateAction(BaseAction):
+    """Bring a window forward and give it keyboard focus.
+
+    The only action whose target is a window rather than an element or a point. A window object
+    exposes no actions of its own on any of the three platforms -- AT-SPI answers `It supports:
+    none` -- so it is done by focusing a descendant, which raises the top-level window everywhere.
+    """
+
+    action: Literal["activate"] = "activate"
+    window: TreeScope
+
+    @field_validator("window", mode="before")
+    @classmethod
+    def _parse_scope(cls, value: Any) -> Any:
+        return TreeScope.parse(value) if isinstance(value, str) else value
+
+
 Action = Annotated[
     MoveAction
     | ClickAction
@@ -315,7 +351,8 @@ Action = Annotated[
     | CollapseAction
     | SelectAction
     | SetValueAction
-    | ShowMenuAction,
+    | ShowMenuAction
+    | ActivateAction,
     Field(discriminator="action"),
 ]
 
@@ -338,6 +375,72 @@ def selector_of(action: Action) -> NodeSelector | None:
 
 #: Parses a batch file: a JSON array of action objects, discriminated on `action`.
 ActionListAdapter: TypeAdapter[list[Action]] = TypeAdapter(list[Action])
+
+#: Every action name, in the spelling the discriminator uses.
+ACTION_NAMES: tuple[str, ...] = (
+    "move",
+    "click",
+    "double_click",
+    "right_click",
+    "drag",
+    "scroll",
+    "type",
+    "key",
+    "screenshot",
+    "tree",
+    "windows",
+    "focus",
+    "toggle",
+    "expand",
+    "collapse",
+    "select",
+    "set_value",
+    "show_menu",
+    "activate",
+)
+
+
+def _cli_spelling(name: str) -> str:
+    """How this action is spelled as a command: `set_value` is typed `set-value`."""
+    return name.replace("_", "-")
+
+
+def normalise_action_names(data: Any) -> Any:
+    """Accept the CLI's own spelling of an action name inside a batch.
+
+    The command is `use-computer set-value`; the batch wanted `set_value`. Same action, two
+    spellings, and nothing said so -- an agent that has just read `set-value --help` has no reason
+    to expect a different name three lines later.
+    """
+    if not isinstance(data, list):
+        return data
+    out = []
+    for item in data:
+        if isinstance(item, dict) and isinstance(item.get("action"), str):
+            item = {**item, "action": item["action"].replace("-", "_")}
+        out.append(item)
+    return out
+
+
+def check_action_names(data: Any) -> None:
+    """Fail on an unknown action with a sentence, before pydantic offers its union.
+
+    The union's own error is four hundred characters naming every variant except the one the
+    caller should have written. This is a message to somebody mid-task who cannot see the code.
+    """
+    if not isinstance(data, list):
+        return
+    for index, item in enumerate(data):
+        if not isinstance(item, dict):
+            continue
+        name = item.get("action")
+        if not isinstance(name, str) or name in ACTION_NAMES:
+            continue
+        close = get_close_matches(name, ACTION_NAMES, n=1, cutoff=0.6)
+        suggestion = f" Did you mean {_cli_spelling(close[0])!r}?" if close else ""
+        raise ValueError(
+            f"unknown action {_cli_spelling(name)!r} at index {index}.{suggestion}"
+        )
 
 #: Parses a single action object.
 ActionAdapter: TypeAdapter[Action] = TypeAdapter(Action)

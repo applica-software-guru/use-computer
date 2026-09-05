@@ -2,8 +2,8 @@
 title: "UI Tree"
 status: synced
 author: ""
-last-modified: "2026-09-05T00:00:00.000Z"
-version: "4.0"
+last-modified: "2026-09-05T12:40:00.000Z"
+version: "5.0"
 ---
 
 # UI Tree
@@ -32,7 +32,7 @@ JSON's cost is not verbosity: `{`, `"`, `:`, `,` and every repeated key are each
 so `"role": "button"` spends five tokens to say one thing — and a tree says it thousands of times.
 
 ```
-# id role "name" !states [actions] x,y wxh +offscreen
+# id role "name" !states [actions] x,y wxh +offscreen ?unexposed
 0 window "Conferma" !modal 0,0 1920x1038
   0/0 panel 0,32 1920x1006
     0/0/0 menubar 0,32 1920x28
@@ -83,6 +83,11 @@ the one they named.
 
 `--window` therefore also accepts a **window id** from `windows`, matched exactly and tested before
 any title, which is the reliable way out of an ambiguity.
+
+**At most one window carries `*`.** The column exists to answer one question — which window
+`--window focused` resolves to — so it is that decision, made once and shown. A platform that
+reports `focused` per application marks several windows at once; that is not an answer and is not
+passed on. When nothing can be determined, no window is marked rather than all of them.
 
 Twelve windows measured at **1,429 bytes** — less than a fifteenth of a single window's tree. It
 yields the `--window` value every later call needs, and `active` says which one `focused` resolves
@@ -186,6 +191,72 @@ is the whole point of operating an element through the platform.
 
 Measured: 73 nodes and 10,948 bytes become **24 nodes and 3,777 bytes**.
 
+## Where the platform is not looking
+
+A tree can be rich, correct and still miss the only thing that matters. Measured in GNOME Drawing:
+
+```
+0/0/2 panel !horizontal 0,106 1920x885 +4
+  0/0/2/0 scrollpane [focus] 0,106 163x885        <- the tool sidebar
+```
+
+The panel is 1920 px wide; its only child covers 163. The other **1757x885 is the canvas**, and it
+is in no tree — not pruned, not summarised, not truncated, absent under `--full` as well. Nothing
+fires: the provider worked, so `reason` stays silent and no screenshot is attached. The result
+looks complete.
+
+That is the normal shape of a drawing program, a map, a chart, a game, a PDF view, a video surface
+and any application that paints its own content inside ordinary chrome. It is the class for which
+"use the screenshot" is the right answer, and it was the class the tree served worst, because an
+agent cannot distinguish it from a window that genuinely exposes everything.
+
+**So a node whose children do not account for its own area says so:**
+
+```
+0/0/2 panel 0,106 1920x885 ?unexposed 163,106 1757x885
+```
+
+The marker names the region in the same actuation units as every other box, because the region is
+the answer — it is where `screenshot --of` points and where a rung-three coordinate has to land.
+
+**The rule.** For a positioned node, take the union bounding box of its **positioned** children —
+an unpositioned child covers nothing and must not hide a blind spot with an arithmetic box — and
+the largest uncovered strip that remains. When nothing under the node is positioned, the whole box
+is the candidate, provided the node says nothing about *itself*: a large named image is described,
+and is not a hole.
+
+A candidate is reported when it is at least **25% of the node's area** and at least **120 px on
+both sides**. A blind spot is a region, not a sliver — and the side bound is what an area bound
+alone could not do:
+
+| Node | Candidate | Reported |
+| --- | --- | --- |
+| the canvas | 1754x883, the whole node | yes |
+| empty space right of the toolbar buttons | 1213x44, 53,000 px² | no — decoration |
+| space beside the menus | 1561x28, 43,000 px² | no — decoration |
+| a container its children tile | nothing | no |
+
+**Only the innermost node is marked.** A canvas nested three panels deep would otherwise be
+reported three times, and the outermost report is the least useful: the agent wants the smallest
+region it can point a screenshot at.
+
+Measured across a real desktop: one marker in the drawing program, on exactly the canvas; one in a
+terminal, on its text grid; two in a file manager, on its icon view. All four are correct — each
+is a surface its application paints — and no other window produced any.
+
+### And an on-screen subtree is no longer counted as off-screen
+
+Finding this needed a second fix. GTK reports the tab that holds the canvas at `(-1, -1)` with no
+size, while the canvas beneath it is 1754x883 and plainly visible. Summarising every descendant of
+an unpositioned node as off-screen folded away **the largest thing in the window**.
+
+So a subtree is summarised only when *nothing in it* is on screen. The closed-menu saving is
+untouched — those items have no positioned descendants either — and the measured window grew by
+three lines.
+
+**`--full` does not turn this off**, because it is not an abbreviation. There is nothing to expand:
+it is a statement about the platform's coverage, and the one thing `--full` cannot recover.
+
 ## Looking at what the tree cannot name
 
 Some things are pixels: an application that paints its own placeholder exposes no string for it.
@@ -215,6 +286,13 @@ and says why:
 | `unavailable` | No provider for this platform, or the backend cannot have one (vnc). |
 | `denied` | The OS refused the accessibility permission. |
 | `empty` | The provider works and the application exposes nothing. |
+
+**A limit the caller asked for is never one of these.** A tree cut to nothing by `--depth`, by
+pruning or by the node budget is not an application that exposes nothing, and must not be reported
+as `empty` — `empty` is a diagnosis about the application, and this feature's own advice on reading
+it is "go and look". A `--depth 1` that comes back saying the application is empty, with a
+screenshot attached to make that branch convenient, is how an agent abandons a perfectly good tree
+and pays for vision. It says which limit emptied it, and the way back is the limit it names.
 
 In each case the result carries the path of a screenshot it took for you, so handing it to
 ui-locator costs no extra round trip. `--no-fallback` turns this off for a caller that wants

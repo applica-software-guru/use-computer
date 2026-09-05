@@ -2,8 +2,8 @@
 title: "Element Addressing"
 status: synced
 author: ""
-last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.1"
+last-modified: "2026-09-05T12:40:00.000Z"
+version: "2.0"
 ---
 
 # Element Addressing
@@ -100,6 +100,45 @@ approximate `focus` or `set-value`.
 Every result carries the rung actually taken, `"via": "action" | "coordinate"`. An agent that
 ignores it still works; one that reads it learns which parts of an application are structurally
 addressable and stops paying for vision on the rest.
+
+An element action that lands on rung two brings the node's window forward first: a coordinate is
+only meaningful in the window it was measured in. Rung one aims nothing and raises nothing.
+
+## `actions` is what the platform will accept, not what will work
+
+A node's `actions` list comes from the platform, and the platform is reporting **what it will let
+you invoke**. Whether the application does anything with it is a separate question that no
+accessibility API answers.
+
+Measured, in GNOME Drawing's colour palette:
+
+```
+0/1/0/1/0/0/11 radio "Dark Brown" [click,focus,select] 337,833 48x32
+```
+
+`click` on that node returns success and changes nothing — GTK's colour swatch implements the
+`click` action as a no-op and returns true from `do_action`, where true means *the action was
+invoked*, not *something happened*. `select` is the action that carries the widget's meaning, and
+it works. So does a real pointer click at the same box.
+
+This is rung one — the rung this document calls exact — reached through `--via auto`, the default,
+**because** the node advertised `click`. The default path picked the action that does nothing and
+reported a success.
+
+Two things follow, and both are narrow:
+
+- **A `click` command prefers the `select` action** on a node whose role makes selection the
+  activation: `radio`, `listitem`, `option`, `treeitem`, `tab`, `menuitem`. For those widgets
+  selecting *is* pressing, and where both are offered, `select` is the one that means it.
+- **Where the action should have left a trace on the node itself** — `checked` or `selected` — the
+  node is re-read and the line says when nothing moved, instead of reporting a success nobody
+  checked.
+
+Neither can be made general. An action can always be accepted and ignored, and the tool cannot see
+inside the application to know. What it can do is stop presenting an unverified success as an exact
+one, and prefer the action that is likelier to carry meaning. The rest belongs in the
+[skill](skill.md): when a result and the screen disagree, the next move is another action on the
+same node, not a screenshot.
 
 ## `set-value` is not `type`
 

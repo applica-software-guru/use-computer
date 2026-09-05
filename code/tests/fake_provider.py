@@ -96,10 +96,17 @@ class FakeProvider:
     raises: Exception | None = None
     snapshots: int = 0
     closed: bool = False
+    #: Windows this provider reports, when the default single-window list is not the point.
+    window_list: tuple[WindowInfo, ...] | None = None
+    #: Whether this platform has a native raise. AT-SPI does not; Windows and macOS do.
+    native_raise: bool = False
+    activated: list[str] = field(default_factory=list)
 
     def windows(self) -> list[WindowInfo]:
         if self.raises is not None:
             raise self.raises
+        if self.window_list is not None:
+            return list(self.window_list)
         return [
             WindowInfo(
                 id="0",
@@ -116,14 +123,29 @@ class FakeProvider:
         self.snapshots += 1
         if self.raises is not None:
             raise self.raises
-        return self.root
+        # Honoured, because the real providers honour it and because a tree cut to nothing by the
+        # caller's own limit must not be reported as an application that exposes nothing.
+        return _trim(self.root, depth)
 
     def perform(self, node_id: str, action: str, value: str | None) -> bool:
         self.calls.append((node_id, action, value))
         return action not in self.refuse
 
+    def activate(self, window_id: str) -> bool:
+        self.activated.append(window_id)
+        return self.native_raise
+
     def close(self) -> None:
         self.closed = True
+
+
+def _trim(node: UINode, depth: int) -> UINode:
+    """`depth 1` is the root alone, as on every platform."""
+    if depth <= 1:
+        return node.model_copy(update={"children": ()})
+    return node.model_copy(
+        update={"children": tuple(_trim(child, depth - 1) for child in node.children)}
+    )
 
 
 def unavailable() -> FakeProvider:
@@ -138,4 +160,25 @@ def empty() -> FakeProvider:
     return FakeProvider(root=node("0", "window", "Canvas", box=(0, 0, 800, 600)))
 
 
-__all__: list[str] = ["FakeProvider", "denied", "dialog", "empty", "node", "unavailable"]
+def window(window_id: str, title: str, *, active: bool = False, app: str = "App") -> WindowInfo:
+    """One entry of a window list, for the rules that are about the list rather than the tree."""
+    return WindowInfo(
+        id=window_id,
+        title=title,
+        role="window",
+        app=app,
+        pid=1,
+        box=Box(x=0, y=0, width=100, height=100),
+        active=active,
+    )
+
+
+__all__: list[str] = [
+    "FakeProvider",
+    "denied",
+    "dialog",
+    "empty",
+    "node",
+    "unavailable",
+    "window",
+]

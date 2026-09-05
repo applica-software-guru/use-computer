@@ -15,7 +15,7 @@ from use_computer.errors import (
     NodeNotFoundError,
     UITreeUnavailableError,
 )
-from use_computer.tree import NodeSelector, UINode, WindowInfo
+from use_computer.tree import Box, NodeSelector, UINode, WindowInfo
 
 #: Roles that are worth keeping even when the platform reports no actions and no name -- an
 #: empty text field has nothing to say about itself and is still the thing an agent came for.
@@ -43,6 +43,17 @@ HIDDEN_STATES = frozenset({"offscreen", "hidden", "invisible"})
 
 #: How many cut subtree roots to name. Truncation has to be reported, not re-enacted.
 MAX_TRUNCATED_IDS = 50
+
+#: How much of a node's own area its children must leave uncovered before it is worth saying so.
+UNEXPOSED_FRACTION = 0.25
+
+#: And how big that region must be on **both** sides.
+#:
+#: A blind spot is a region, not a sliver. Measured in GNOME Drawing: the canvas is 1754x883 and is
+#: worth reporting; the 1213x44 of empty space to the right of the toolbar buttons, and the 1561x28
+#: beside the menus, are decoration -- the platform describes nothing there because there is
+#: nothing there. An area bound alone let both of those through, at 53,000 and 43,000 pixels.
+UNEXPOSED_MIN_SIDE = 120
 
 #: Appended to a name or value that was clamped, so a reader can tell.
 ELLIPSIS = "\u2026"
@@ -93,7 +104,137 @@ def is_interesting(node: UINode) -> bool:
     """
     if node.actions:
         return True
+    if node.unexposed is not None:
+        # The one thing on this node that no child can stand in for: where the platform is
+        # describing nothing. Collapsing it away would delete the only sign a canvas exists.
+        return True
     return is_on_screen(node) and (is_interactable(node) or carries_text(node))
+
+
+def sole_active(entries: Sequence[WindowInfo]) -> list[WindowInfo]:
+    """Leave the active mark on at most one window.
+
+    The column answers exactly one question -- which window ``--window focused`` resolves to -- so
+    it is that decision, made once. AT-SPI reports `active` per *application*, so on a desktop with
+    several running programs three windows carried the mark at once, which answers nothing and is
+    the first thing an agent is told to read.
+
+    Measured on this desktop: neither `active` nor `focused` identifies the window on top, and
+    neither does looking for a focused descendant. So when several claim it, **none** is marked.
+    Saying nothing is worth more than a mark that is wrong two times in three.
+    """
+    claimed = [entry for entry in entries if entry.active]
+    if len(claimed) == 1:
+        return list(entries)
+    return [entry.model_copy(update={"active": False}) for entry in entries]
+
+
+def active_window(entries: Sequence[WindowInfo]) -> WindowInfo:
+    """The window ``focused`` resolves to, or a refusal naming the candidates.
+
+    Same refusal as an ambiguous title, for the same reason: picking the first match is how an
+    agent ends up reading, clicking and verifying inside the wrong application, consistently.
+    """
+    claimed = [entry for entry in entries if entry.active]
+    if len(claimed) == 1:
+        return claimed[0]
+    if not claimed:
+        raise UITreeUnavailableError(
+            "no window reports itself as active. Name one with --window TITLE, --window ID from "
+            "`windows`, or --window @PID."
+        )
+    raise AmbiguousWindowError(
+        "focused",
+        claimed,
+        "this platform reports `active` per application, so it cannot say which window is on "
+        "top. Name one with --window ID from `windows`, --window TITLE, or --window @PID",
+    )
+
+
+def mark_unexposed(node: UINode) -> UINode:
+    """Say where a node's children do not account for the node's own area.
+
+    A tree can be rich, correct, and silent about the only region that matters. Measured in GNOME
+    Drawing: a panel 1920 px wide whose single child covers 163, with the other 1757x885 -- the
+    canvas -- in no tree at all, not pruned, not summarised, not truncated, and absent under
+    ``--full`` as well. Nothing fired, because the provider worked and returned plenty.
+
+    That is the ordinary shape of a drawing program, a map, a chart, a game or a PDF view: the one
+    class of application for which "use the screenshot" is the right answer, and the one the tree
+    served worst, because an agent could not tell it from a window that exposes everything.
+
+    This runs on the **raw** snapshot, before pruning: a region hidden by our own pruning is not a
+    region the platform failed to describe.
+    """
+    marked, _ = _mark(node)
+    return marked
+
+
+def _mark(node: UINode) -> tuple[UINode, bool]:
+    """Mark this subtree, and say whether anything in it carries a mark.
+
+    Only the **innermost** node is marked. A canvas nested three panels deep would otherwise be
+    reported three times, and the outermost report is the least useful of them: the agent wants the
+    smallest region it can point a screenshot at.
+    """
+    children = []
+    deeper = False
+    for child in node.children:
+        marked, found = _mark(child)
+        children.append(marked)
+        deeper = deeper or found
+    kids = tuple(children)
+    region = None if deeper else _blind_spot(node, kids)
+    return (
+        node.model_copy(update={"children": kids, "unexposed": region}),
+        deeper or region is not None,
+    )
+
+
+def _describes_itself(node: UINode) -> bool:
+    """Whether the platform says anything about this node beyond that it is there."""
+    return bool(node.name or node.value or node.actions)
+
+
+def _blind_spot(node: UINode, children: Sequence[UINode]) -> Box | None:
+    """The region of ``node`` that its positioned children leave undescribed."""
+    if not node.box.positioned:
+        return None
+
+    # Positioned children only: an unpositioned child covers nothing, and must not be allowed to
+    # hide a blind spot by contributing an arithmetic box.
+    boxes = [child.box for child in children if child.box.positioned]
+
+    left, top = node.box.x, node.box.y
+    right, bottom = left + node.box.width, top + node.box.height
+    if not boxes:
+        # Nothing positioned underneath: the whole box is undescribed. That is the shape a drawing
+        # surface actually has -- one positioned rectangle with no name, no value and no actions,
+        # either childless or holding only the parts of a dialog that is not showing.
+        if _describes_itself(node):
+            return None  # a large named image is described; it is not a hole
+        widest = node.box
+    else:
+        covered_left = max(left, min(box.x for box in boxes))
+        covered_top = max(top, min(box.y for box in boxes))
+        covered_right = min(right, max(box.x + box.width for box in boxes))
+        covered_bottom = min(bottom, max(box.y + box.height for box in boxes))
+        if covered_right <= covered_left or covered_bottom <= covered_top:
+            return None
+        strips = (
+            Box(x=left, y=top, width=covered_left - left, height=node.box.height),
+            Box(x=covered_right, y=top, width=right - covered_right, height=node.box.height),
+            Box(x=left, y=top, width=node.box.width, height=covered_top - top),
+            Box(x=left, y=covered_bottom, width=node.box.width, height=bottom - covered_bottom),
+        )
+        widest = max(strips, key=lambda box: box.width * box.height)
+
+    if min(widest.width, widest.height) < UNEXPOSED_MIN_SIDE:
+        return None
+    own = node.box.width * node.box.height
+    if not own or (widest.width * widest.height) / own < UNEXPOSED_FRACTION:
+        return None
+    return widest
 
 
 def prune(root: UINode) -> UINode:
@@ -191,13 +332,24 @@ def summarise_offscreen(node: UINode) -> UINode:
     shown: list[UINode] = []
     hidden = 0
     for child in node.children:
-        if child.box.positioned:
+        if child.box.positioned or _shows_something(child):
             shown.append(summarise_offscreen(child))
         else:
             hidden += count(child)
     return node.model_copy(
         update={"children": tuple(shown), "offscreen_children": hidden}
     )
+
+
+def _shows_something(node: UINode) -> bool:
+    """Whether anything in this subtree is on screen.
+
+    An unpositioned node is not necessarily an unpositioned *subtree*. GTK reports the tab holding
+    a drawing canvas at (-1, -1) with a 1x1 size while the canvas under it is 1754x883 and plainly
+    visible -- counting that as an off-screen descendant hides the largest thing in the window.
+    The closed-menu case is unaffected: its items have no positioned descendants either.
+    """
+    return any(descendant.box.positioned for descendant in walk(node))
 
 
 def clamp_text(node: UINode, limit: int) -> UINode:

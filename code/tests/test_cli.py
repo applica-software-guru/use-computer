@@ -163,17 +163,49 @@ def test_config_show_prints_layers_and_masks_secrets(
     write_config: WriteConfig,
 ) -> None:
     write_config(CONFIG + '\npassword = "hunter2"\n')
-    result = invoke(runner, "config", "show")
+    result = invoke(runner, "config", "show", "--format", "json")
     assert result.exit_code == EXIT_OK
     payload = json.loads(result.stdout)
     assert payload["profile"] == "fake"
     assert payload["values"]["delay"]["env"] == "USE_COMPUTER_DELAY"
 
 
-def test_version_is_json_too(runner: CliRunner) -> None:
+def test_config_show_reads_as_lines_by_default(
+    runner: CliRunner,
+    write_config: WriteConfig,
+) -> None:
+    # The command named first when a profile misbehaves. Two kilobytes on one line is the worst
+    # possible answer to "why is this profile behaving like that".
+    write_config(CONFIG)
+    result = invoke(runner, "config", "show")
+    assert result.exit_code == EXIT_OK
+    assert not result.stdout.lstrip().startswith("{")
+    lines = result.stdout.splitlines()
+    assert lines[0].split() == ["key", "value", "layer", "env"]
+    assert any(
+        line.startswith("delay") and "USE_COMPUTER_DELAY" in line for line in lines
+    )
+    assert "profile: fake" in result.stdout
+
+
+def test_config_show_prints_a_setting_the_way_it_is_typed(
+    runner: CliRunner, write_config: WriteConfig
+) -> None:
+    # `CoordinateSpace.SCREENSHOT` is a repr, not a value anybody could put in a config file.
+    write_config(CONFIG)
+    result = invoke(runner, "config", "show")
+    assert any(
+        line.startswith("space") and "screenshot" in line
+        for line in result.stdout.splitlines()
+    )
+
+
+def test_version_is_text_like_everything_else(runner: CliRunner) -> None:
+    # A contract is worth what its least consistent command is worth.
     result = invoke(runner, "--version")
     assert result.exit_code == EXIT_OK
-    assert "version" in json.loads(result.stdout)
+    assert result.stdout.startswith("use-computer ")
+    assert not result.stdout.lstrip().startswith("{")
 
 
 def test_json_output_survives_a_long_string(

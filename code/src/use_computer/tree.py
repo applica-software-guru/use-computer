@@ -92,6 +92,11 @@ class UINode(BaseModel):
         ge=0,
         description="Descendants not on screen, counted rather than expanded.",
     )
+    unexposed: Box | None = Field(
+        default=None,
+        description="The part of this node's box its children do not account for: where the "
+        "platform is describing nothing, which is where a canvas lives.",
+    )
     children: tuple[UINode, ...] = ()
 
     @model_serializer
@@ -113,6 +118,8 @@ class UINode(BaseModel):
         out["box"] = self.box
         if self.offscreen_children:
             out["offscreen_children"] = self.offscreen_children
+        if self.unexposed is not None:
+            out["unexposed"] = self.unexposed
         if self.children:
             out["children"] = list(self.children)
         return out
@@ -224,6 +231,12 @@ class TreeResult(BaseModel):
         "objects instead: asking for the envelope is asking to parse.",
     )
     reason: TreeReason | None = None
+    limited_by: str | None = Field(
+        default=None,
+        description="The caller's own limit that emptied this tree -- a depth, the pruning, the "
+        "node budget. Never a `reason`: `reason` is a diagnosis about the application, and it "
+        "tells an agent to stop reading trees and pay for vision.",
+    )
     screenshot: Screenshot | None = None
     path: Path | None = Field(
         default=None,

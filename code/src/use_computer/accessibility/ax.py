@@ -197,6 +197,17 @@ class AxProvider:
         roles.COLLAPSE: "AXPress",
     }
 
+    def activate(self, window_id: str) -> bool:
+        """macOS windows do accept a raise of their own: AXRaise."""
+        element = self._index.get(window_id)
+        if element is None:
+            return False
+        try:
+            status = self._api.AXUIElementPerformAction(element, "AXRaise")
+        except Exception:
+            return False
+        return bool(status == 0)
+
     def perform(self, node_id: str, action: str, value: str | None) -> bool:
         element = self._index.get(node_id)
         if element is None:
