@@ -32,6 +32,7 @@ from use_computer.actions import (
     ScrollAction,
     TreeAction,
     TypeAction,
+    WindowsAction,
     resolve,
     selector_of,
     with_default_space,
@@ -55,7 +56,17 @@ from use_computer.errors import (
     UITreeUnavailableError,
     UseComputerError,
 )
-from use_computer.selectors import budget, clamp_text, count, find, prune, resolve_one, subtree
+from use_computer.selectors import (
+    budget,
+    clamp_text,
+    count,
+    find,
+    notable_states,
+    prune,
+    resolve_one,
+    subtree,
+    summarise_offscreen,
+)
 from use_computer.tree import (
     Box,
     NodeSelector,
@@ -63,6 +74,7 @@ from use_computer.tree import (
     TreeResult,
     UINode,
     Via,
+    WindowInfo,
 )
 
 #: Which canonical accessibility action each member of the action set asks the platform for.
@@ -145,6 +157,9 @@ class ActionResult(BaseModel):
     change: ChangeReport | None = None
     screenshot: Screenshot | None = None
     tree: TreeResult | None = Field(default=None, description="What `tree` read.")
+    windows: tuple[WindowInfo, ...] | None = Field(
+        default=None, description="What `windows` listed."
+    )
     matched: UINode | None = Field(default=None, description="The node a selector resolved to.")
     via: Via | None = Field(
         default=None, description="The rung actually taken; never `auto`."
@@ -161,6 +176,7 @@ class _Outcome(NamedTuple):
 
     screenshot: Screenshot | None = None
     tree: TreeResult | None = None
+    windows: tuple[WindowInfo, ...] | None = None
     via: Via | None = None
     resolved: Coordinate | None = None
 
@@ -287,6 +303,7 @@ class Session:
         screenshot: Screenshot | None = None
         change: ChangeReport | None = None
         tree: TreeResult | None = None
+        windows: tuple[WindowInfo, ...] | None = None
         matched: UINode | None = None
         via: Via | None = None
         performed = False
@@ -300,7 +317,7 @@ class Session:
                 # from an earlier run safe to carry: nothing is trusted from the old snapshot.
                 # Matching sees the full text; only what is reported back is clamped.
                 matched = clamp_text(
-                    self._resolve_node(selector), settings.tree_max_text
+                    notable_states(self._resolve_node(selector)), settings.tree_max_text
                 )
             if settings.dry_run:
                 # Everything above ran: the profile, the scaling, the key parsing, and the
@@ -313,6 +330,7 @@ class Session:
             else:
                 outcome = self._perform(action, target, origin, matched)
                 screenshot, tree, via = outcome.screenshot, outcome.tree, outcome.via
+                windows = outcome.windows
                 if outcome.resolved is not None:
                     target = outcome.resolved
                 performed = True
@@ -348,6 +366,7 @@ class Session:
             change=change,
             screenshot=screenshot,
             tree=tree,
+            windows=windows,
             matched=matched,
             via=via,
             error=error,
@@ -366,6 +385,9 @@ class Session:
 
         if isinstance(action, TreeAction):
             return _Outcome(tree=self._tree(action))
+
+        if isinstance(action, WindowsAction):
+            return _Outcome(windows=tuple(self._provider().windows()))
 
         if matched is not None:
             via = self._plan_via(action, matched)
@@ -506,12 +528,19 @@ class Session:
                 node.model_copy(update={"children": ()}) for node in find(root, selector)
             )
             root = root.model_copy(update={"children": matches})
-        elif not action.all:
+        elif not action.full:
             root = prune(root)
+
+        if not action.full:
+            # Shape before size: dropping the states that say nothing, and counting what is off
+            # screen instead of expanding it, is what made a tree affordable -- the budget only
+            # ever bounded the worst case. Both decide what to *report*; a selector still resolves
+            # against everything, so `click --name "Preferences"` works with the menu closed.
+            root = summarise_offscreen(notable_states(root))
 
         truncated = False
         cut: tuple[str, ...] = ()
-        if action.all:
+        if action.full:
             total = count(root)
         else:
             root, total, truncated, cut = budget(root, settings.tree_max_nodes)

@@ -3,7 +3,7 @@ title: "UI Tree"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.3"
+version: "2.0"
 ---
 
 # UI Tree
@@ -18,6 +18,21 @@ machine. `tree` is how it asks.
 This does not replace the screenshot; it demotes it. **Ask the tree first, look at the picture only
 when the tree cannot answer.**
 
+## `use-computer windows` — read this first
+
+The cheapest question is "what is open?", and it should not cost a tree.
+
+```json
+[
+  {"id": "0/29/0", "title": "Conferma", "role": "window",
+   "pid": 4711, "box": [0, 0, 1920, 1038], "active": true}
+]
+```
+
+Twelve windows measured at **1,429 bytes** — less than a fifteenth of a single window's tree. It
+yields the `--window` value every later call needs, and `active` says which one `focused` resolves
+to. `pid` lives here and not on `UINode`: a window list is where it earns its bytes.
+
 ## `use-computer tree`
 
 ```bash
@@ -25,7 +40,8 @@ use-computer tree                                  # the focused window, pruned
 use-computer tree --role button                    # only buttons
 use-computer tree --name Invia                     # name contains "Invia"
 use-computer tree --window all --depth 3           # every window, shallow
-use-computer tree --of 0/2/1 --all                 # expand one subtree, unpruned
+use-computer tree --of 0/2/1                       # expand one subtree
+use-computer tree --full                           # everything, unpruned, all fields
 ```
 
 By default it snapshots the **focused window**, not the whole desktop.
@@ -37,15 +53,23 @@ By default it snapshots the **focused window**, not the whole desktop.
   "id": "0/2/1/3",
   "role": "button",
   "name": "Invia",
-  "value": null,
-  "states": ["enabled", "focusable", "showing"],
   "actions": ["click", "focus"],
-  "box": {"x": 412, "y": 260, "width": 88, "height": 32, "space": "actuation"},
-  "center": {"x": 456, "y": 276, "space": "actuation"},
-  "children": []
+  "box": [412, 260, 88, 32]
 }
 ```
 
+The node is deliberately terse, because a tree is only useful if an agent can afford to read it.
+Measured over the same 73 nodes: 271 bytes each in the obvious shape, 150 in this one.
+
+- **`box` is `[x, y, width, height]`** in **actuation** units — always, so the space is not
+  repeated on every node. The point to click is its centre.
+- **`states` carries only what is surprising.** `showing`, `enabled`, `focusable` and their like
+  are what almost every node says, so they say nothing and are omitted. `checked`, `selected`,
+  `expanded`, `modal` and **`disabled`** appear when they apply.
+- **`disabled` is emitted, not inferred.** The platforms report *enabled* and simply say nothing
+  when a control is not, so leaving it out would hide the one case an agent must not miss. The
+  absence is turned into a presence.
+- Empty fields are omitted rather than sent as `null`.
 - **`id`** — a structural path in the *full* tree, **relative to the scope that was read**. It
   addresses the node in `--of` and in [element addressing](element-addressing.md), where it is
   fingerprint-checked before use. An id from one `--window` does not mean the same thing under
@@ -53,8 +77,7 @@ By default it snapshots the **focused window**, not the whole desktop.
 - **`actions`** — the canonical actions this node actually supports. An empty list means the
   platform exposes no way to operate it, so it must be clicked by coordinate. This is what makes
   element addressing discoverable instead of guesswork.
-- **`box` and `center`** — always in **actuation** units, because that is what the accessibility
-  API reports. `center` is the point to click when `actions` is empty.
+- **`offscreen_children`** — how many descendants hang off this node that are not on screen.
 
 With `--role` or `--name` the result is the scope root carrying the matches as a flat list, which
 is what "only buttons" should mean. `--out PATH` writes the tree JSON to a file and returns its
@@ -88,9 +111,35 @@ are there to identify an element, not to read it: one terminal window otherwise 
 bytes than the other seventy nodes together. Matching is unaffected — a selector is resolved
 against the full text, and only what is reported back is clamped.
 
+## What is not on screen is counted, not expanded
+
+Of the 73 nodes in one measured terminal window, **55 were the items of closed menus**: real,
+operable through the platform, and not visible. Expanding them costs three quarters of the payload
+before anybody asks.
+
+So a subtree hanging off a node with no on-screen position is reported as a count:
+
+```json
+{"id": "0/0/0/0", "role": "menu", "name": "File",
+ "actions": ["click", "select"], "box": [0, 32, 37, 28], "offscreen_children": 5}
+```
+
+`--of 0/0/0/0` expands it, exactly as a truncated subtree is re-entered. Nothing is hidden — the
+count is right there — and **nothing is lost to a selector**: `click --name "Preferences"` still
+resolves with the menu closed, because summarising decides what to *report*, not what exists. That
+is the whole point of operating an element through the platform.
+
+Measured: 73 nodes and 10,948 bytes become **24 nodes and 3,777 bytes**.
+
+## `--full` is the escape hatch
+
+One flag, and it means everything: no pruning, no node budget, every state, every field, every
+subtree expanded. It is not a slightly-less-compact middle setting, and there is no second flag for
+half of it.
+
 **Truncation is never silent.** The result carries `truncated`, `node_count` and the ids that were
 cut, and `--of ID` re-enters at any of them — so a truncated tree is a starting point, not a dead
-end. `--all` disables both pruning and the budget.
+end.
 
 ## When there is no tree, there is a screenshot
 

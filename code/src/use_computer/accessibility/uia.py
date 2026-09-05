@@ -10,7 +10,7 @@ from typing import Any
 
 from use_computer.accessibility import roles
 from use_computer.accessibility.base import require
-from use_computer.tree import Box, TreeScope, TreeScopeKind, UINode
+from use_computer.tree import Box, TreeScope, TreeScopeKind, UINode, WindowInfo
 
 
 class UiaProvider:
@@ -23,6 +23,24 @@ class UiaProvider:
         self._index: dict[str, Any] = {}
 
     # --- reading -----------------------------------------------------------------------------
+
+    def windows(self) -> list[WindowInfo]:
+        found: list[WindowInfo] = []
+        for index, window in enumerate(self._auto.GetRootControl().GetChildren()):
+            try:
+                found.append(
+                    WindowInfo(
+                        id=f"0/{index}",
+                        title=window.Name or None,
+                        role=roles.uia_role(window.ControlTypeName or ""),
+                        pid=int(window.ProcessId),
+                        box=self._box(window),
+                        active=bool(window.HasKeyboardFocus),
+                    )
+                )
+            except Exception:
+                continue
+        return found
 
     def snapshot(self, scope: TreeScope, depth: int) -> UINode:
         self._index = {}

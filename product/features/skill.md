@@ -3,7 +3,7 @@ title: "Agent Skill"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.1"
+version: "1.2"
 ---
 
 # Agent Skill
@@ -23,13 +23,18 @@ wheel before release.
 The skill is the only reason any of this is reachable by the agent it was built for, so its
 content is part of the specification, not a README:
 
-1. **`tree` before `screenshot`.** The opening decision procedure is: read the tree, act on what
-   you find, and reach for a screenshot and ui-locator only when the tree cannot see the element.
-   Order is instruction — an agent follows what it reads first.
+1. **`windows`, then `tree`, then `screenshot`.** The opening decision procedure is: list the
+   windows, read the tree of the one you want, act on what you find, and reach for a screenshot and
+   ui-locator only when the tree cannot see the element. Order is instruction — an agent follows
+   what it reads first, and a `tree` of the wrong window costs more than the list would have.
 2. **Both addressing modes**, with a worked example of each, and the explicit statement that pixel
    coordinates remain correct and supported.
 3. **`set-value` versus `type`**, because choosing wrong there fails silently in real applications.
-4. **What the errors mean** — ambiguity hands back candidates to choose between; no match is the
+4. **What is abbreviated, and how to get the rest.** A `value` is clamped and marked with `…`; an
+   off-screen subtree arrives as `offscreen_children` and expands with `--of`; a budgeted tree
+   reports `truncated`. An agent that mistakes an abbreviation for the whole thing draws a wrong
+   conclusion from a correct answer, so each one has to name its own escape hatch.
+5. **What the errors mean** — ambiguity hands back candidates to choose between; no match is the
    signal to switch to vision, and it already carries the screenshot path.
 
 `x-skill-version` bumps whenever that guidance changes, so `skill status` reports installed copies

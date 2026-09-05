@@ -1,6 +1,6 @@
 ---
 title: "Cheap reads: list the windows, and stop paying for what is not on screen"
-status: pending
+status: applied
 author: "bruno.fortunato@applica.guru"
 created-at: "2026-09-05T00:00:00.000Z"
 ---

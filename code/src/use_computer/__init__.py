@@ -29,6 +29,7 @@ from use_computer.actions import (
     ToggleAction,
     TreeAction,
     TypeAction,
+    WindowsAction,
 )
 from use_computer.backends import Backend, create_backend
 from use_computer.compare import ChangeReport, Screenshot, compare
@@ -58,6 +59,7 @@ from use_computer.tree import (
     TreeScope,
     UINode,
     Via,
+    WindowInfo,
 )
 
 #: The distribution name on PyPI, which differs from the import package: `use-computer` was
@@ -125,6 +127,8 @@ __all__ = [
     "UITreeUnavailableError",
     "UseComputerError",
     "Via",
+    "WindowInfo",
+    "WindowsAction",
     "__version__",
     "compare",
     "convert",

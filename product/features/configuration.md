@@ -3,7 +3,7 @@ title: "Configuration"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.4"
+version: "1.5"
 ---
 
 # Configuration
@@ -96,6 +96,10 @@ Three settings bound what `tree` returns, resolved through the same layers as ev
 
 These exist for the same reason base64 screenshots were removed: a tree poured into an agent's
 context is expensive and looks useful.
+
+None of these is what made the tree affordable, though. **The shape did**: a terser node, and
+counting what is off screen instead of expanding it, took one measured window from 19,752 bytes to
+3,777. A budget bounds the worst case; it does not make the ordinary case cheap.
 
 **Two budgets, because nodes are the wrong unit on their own.** A terminal or an editor reports its
 entire buffer as one node's `value` — thirteen kilobytes from a single node defeats a budget of

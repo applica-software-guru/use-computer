@@ -14,7 +14,7 @@ from typing import Any
 from use_computer.accessibility import roles
 from use_computer.accessibility.base import require
 from use_computer.errors import UITreeUnavailableError
-from use_computer.tree import Box, TreeScope, TreeScopeKind, UINode
+from use_computer.tree import Box, TreeScope, TreeScopeKind, UINode, WindowInfo
 
 SYSTEM_PACKAGE = "gir1.2-atspi-2.0 (and python3-pyatspi on Debian/Ubuntu)"
 
@@ -53,6 +53,29 @@ class AtspiProvider:
         self._index: dict[str, Any] = {}
 
     # --- reading -----------------------------------------------------------------------------
+
+    def windows(self) -> list[WindowInfo]:
+        desktop = self._desktop()
+        found: list[WindowInfo] = []
+        for app_index, app in enumerate(self._children(desktop)):
+            try:
+                pid = self._pid(app)
+                for index, window in enumerate(self._children(app)):
+                    states = set(self._states(window))
+                    found.append(
+                        WindowInfo(
+                            id=f"0/{app_index}/{index}",
+                            title=window.get_name() or None,
+                            role=roles.atspi_role(window.get_role_name() or ""),
+                            pid=pid if pid > 0 else None,
+                            box=self._box(window),
+                            active="active" in states or "focused" in states,
+                        )
+                    )
+            except Exception:
+                # One client that will not answer costs its own windows, never the list.
+                continue
+        return found
 
     def snapshot(self, scope: TreeScope, depth: int) -> UINode:
         self._index = {}

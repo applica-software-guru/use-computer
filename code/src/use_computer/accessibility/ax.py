@@ -15,7 +15,7 @@ from typing import Any
 from use_computer.accessibility import roles
 from use_computer.accessibility.base import require
 from use_computer.errors import PermissionDeniedError
-from use_computer.tree import Box, TreeScope, TreeScopeKind, UINode
+from use_computer.tree import Box, TreeScope, TreeScopeKind, UINode, WindowInfo
 
 #: kAXErrorAPIDisabled -- the process is not trusted for accessibility.
 API_DISABLED = -25211
@@ -37,6 +37,34 @@ class AxProvider:
         self._index: dict[str, Any] = {}
 
     # --- reading -----------------------------------------------------------------------------
+
+    def windows(self) -> list[WindowInfo]:
+        """The windows of the frontmost application.
+
+        Not every application's: the accessibility API has no way to enumerate processes, and
+        the window-server list that would (`CGWindowListCopyWindowInfo`) is a different framework
+        and a dependency this does not carry. Said plainly here and in the docs rather than
+        quietly returning less than the other platforms do.
+        """
+        system = self._api.AXUIElementCreateSystemWide()
+        app = self._attr(system, "AXFocusedApplication")
+        if app is None:
+            return []
+        focused = self._attr(app, "AXFocusedWindow")
+        found: list[WindowInfo] = []
+        for index, window in enumerate(self._attr(app, "AXWindows") or []):
+            title = self._attr(window, "AXTitle")
+            found.append(
+                WindowInfo(
+                    id=f"0/{index}",
+                    title=str(title) if title else None,
+                    role=roles.ax_role(str(self._attr(window, "AXRole") or "")),
+                    pid=None,
+                    box=self._box(window),
+                    active=bool(focused is not None and window == focused),
+                )
+            )
+        return found
 
     def snapshot(self, scope: TreeScope, depth: int) -> UINode:
         self._index = {}

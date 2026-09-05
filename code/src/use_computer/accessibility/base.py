@@ -15,7 +15,7 @@ from types import ModuleType
 from typing import Protocol, runtime_checkable
 
 from use_computer.errors import UITreeUnavailableError
-from use_computer.tree import TreeScope, UINode
+from use_computer.tree import TreeScope, UINode, WindowInfo
 
 
 @runtime_checkable
@@ -23,6 +23,13 @@ class AccessibilityProvider(Protocol):
     """What every platform provider implements. The fake provider in tests satisfies it too."""
 
     name: str
+
+    def windows(self) -> list[WindowInfo]:
+        """List what is open: the cheapest question an agent can ask.
+
+        A shallow read, and it must tolerate an application that will not answer on the bus --
+        it loses that application, never the list.
+        """
 
     def snapshot(self, scope: TreeScope, depth: int) -> UINode:
         """Read the tree, *unpruned*.

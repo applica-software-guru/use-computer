@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from use_computer.errors import PermissionDeniedError, UITreeUnavailableError
-from use_computer.tree import Box, TreeScope, UINode
+from use_computer.tree import Box, TreeScope, UINode, WindowInfo
 
 
 def node(
@@ -96,6 +96,20 @@ class FakeProvider:
     raises: Exception | None = None
     snapshots: int = 0
     closed: bool = False
+
+    def windows(self) -> list[WindowInfo]:
+        if self.raises is not None:
+            raise self.raises
+        return [
+            WindowInfo(
+                id="0",
+                title=self.root.name,
+                role=self.root.role,
+                pid=4711,
+                box=self.root.box,
+                active=True,
+            )
+        ]
 
     def snapshot(self, scope: TreeScope, depth: int) -> UINode:
         self.snapshots += 1

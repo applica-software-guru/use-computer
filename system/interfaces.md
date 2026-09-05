@@ -3,7 +3,7 @@ title: "Interfaces"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.3"
+version: "2.0"
 ---
 
 # Interfaces
@@ -30,8 +30,9 @@ use-computer screenshot  [--out PATH]
 ### Element commands
 
 ```
+use-computer windows
 use-computer tree        [--window SCOPE] [--depth INT] [--role ROLE] [--name TEXT]
-                         [--all] [--of NODE_ID] [--out PATH] [--no-fallback]
+                         [--full] [--of NODE_ID] [--out PATH] [--no-fallback]
 use-computer focus       SELECTOR
 use-computer toggle      SELECTOR
 use-computer expand      SELECTOR
@@ -115,6 +116,22 @@ A screenshot is **never** returned as bytes; there is no base64 anywhere in this
 }
 ```
 
+### `windows` JSON
+
+The `windows` field of the result:
+
+```json
+[
+  {"id": "0/29/0", "title": "Conferma", "role": "window",
+   "pid": 4711, "box": [0, 0, 1920, 1038], "active": true},
+  {"id": "0/33/0", "title": "Posta", "role": "window",
+   "pid": 5210, "box": [331, 130, 1152, 784], "active": false}
+]
+```
+
+Measured at 119 bytes a window. It must survive an application that will not answer on the
+accessibility bus: that application is missing from the list, the list still comes back.
+
 ### `tree` JSON
 
 The `tree` field of the result:
@@ -125,22 +142,23 @@ The `tree` field of the result:
     "id": "0",
     "role": "dialog",
     "name": "Conferma",
-    "value": null,
-    "states": ["enabled", "showing"],
-    "actions": [],
-    "box": {"x": 300, "y": 200, "width": 400, "height": 180, "space": "actuation"},
-    "center": {"x": 500, "y": 290, "space": "actuation"},
+    "states": ["modal"],
+    "box": [300, 200, 400, 180],
     "children": [
       {
         "id": "0/2/1/3",
         "role": "button",
         "name": "Invia",
-        "value": null,
-        "states": ["enabled", "focusable", "showing"],
         "actions": ["click", "focus"],
-        "box": {"x": 412, "y": 260, "width": 88, "height": 32, "space": "actuation"},
-        "center": {"x": 456, "y": 276, "space": "actuation"},
-        "children": []
+        "box": [412, 260, 88, 32]
+      },
+      {
+        "id": "0/2/2",
+        "role": "menu",
+        "name": "File",
+        "actions": ["click"],
+        "box": [0, 32, 37, 28],
+        "offscreen_children": 5
       }
     ]
   },
@@ -182,10 +200,8 @@ involved. With `via: "coordinate"` it carries the centre of the matched node, in
     "type": "AmbiguousNodeError",
     "message": "3 nodes match role=button name~=OK; narrow the selector or pass --nth",
     "candidates": [
-      {"id": "0/1/2", "role": "button", "name": "OK",
-       "box": {"x": 100, "y": 90, "width": 60, "height": 24, "space": "actuation"}},
-      {"id": "0/4/2", "role": "button", "name": "OK",
-       "box": {"x": 520, "y": 300, "width": 60, "height": 24, "space": "actuation"}}
+      {"id": "0/1/2", "role": "button", "name": "OK", "box": [100, 90, 60, 24]},
+      {"id": "0/4/2", "role": "button", "name": "OK", "box": [520, 300, 60, 24]}
     ]
   }
 }
@@ -273,13 +289,18 @@ Construction raises `BackendNotAvailableError` naming the extra to install.
 @runtime_checkable
 class AccessibilityProvider(Protocol):
     name: str
+    def windows(self) -> list[WindowInfo]: ...
     def snapshot(self, scope: TreeScope, depth: int) -> UINode: ...
     def perform(self, node_id: str, action: str, value: str | None) -> bool: ...
     def close(self) -> None: ...
 ```
 
-`snapshot` returns the **unpruned** tree; pruning and the node budget are applied above it by
-`selectors.py`, so ids stay addressable and the policy is testable without a desktop.
+`snapshot` returns the **unpruned** tree with every state; pruning, the node budget, the notable
+state filter and the off-screen summary are applied above it by `selectors.py`, so ids stay
+addressable and every one of those decisions is testable without a desktop.
+
+`windows` is a shallow read of the same tree and must tolerate an application that does not answer:
+it loses that application, never the list.
 
 `perform` returns whether the platform actually carried the action out. It is a boolean rather than
 `None` because several of these APIs report failure by returning false rather than raising, and a
@@ -352,8 +373,13 @@ every field.
 ## Agent Notes
 
 The Run JSON shape is the contract the calling agent depends on. Adding fields is compatible;
-renaming or removing one requires a change request. `tree`, `matched` and `via` are additions and
-are `null` on every action that does not use them, so an existing consumer is unaffected.
+renaming or removing one requires a change request. `tree`, `windows`, `matched` and `via` are
+additions and are `null` on every action that does not use them.
+
+The **node** shape is not additive, and was changed deliberately: `box` is an array, empty fields
+are omitted, and `states` carries only the notable ones. A tree carries thousands of nodes, and the
+obvious shape measured 271 bytes each against 150 — five times the whole payload once off-screen
+subtrees are counted rather than expanded. `--full` restores everything.
 
 Coordinate addressing is unchanged and stays that way: an agent holding pixels from ui-locator
 behaves exactly as it did before any of this existed.

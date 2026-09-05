@@ -16,8 +16,12 @@ not decide *what* to do — you do.
 Take the highest rung you can reach. Each one is cheaper, faster and more accurate than the one
 below it.
 
-1. **`use-computer tree`** — ask the OS what is on screen. You get roles, names and boxes. Then
-   act on an element by name: `use-computer click --role button --name "Invia"`.
+0. **`use-computer windows`** — what is open. A dozen windows cost about 1.4 KB; a single
+   window's tree costs fifteen times that. Make this call first: it gives you the `--window` value
+   everything else needs, and tells you which window `focused` will resolve to.
+1. **`use-computer tree --window "..."`** — ask the OS what is in that window. You get roles, names
+   and boxes. Then act on an element by name:
+   `use-computer click --role button --name "Invia"`.
 2. **A coordinate from the tree** — the element is there but the platform will not operate it.
    `click` falls back to its centre on its own and tells you it did.
 3. **Vision** — the tree cannot see it. Take a screenshot, ask ui-locator where the thing is, and
@@ -45,29 +49,59 @@ yourself, which you should not do.
 If a run fails saying the scale is unknown, take a screenshot first (`use-computer screenshot`)
 and read `screen` from the result; do not compute a factor and retry with different numbers.
 
+## Listing the windows
+
+```bash
+use-computer windows --use laptop
+```
+
+```json
+[{"id": "0/29/0", "title": "Conferma", "role": "window",
+  "pid": 4711, "box": [0, 0, 1920, 1038], "active": true}]
+```
+
+Use the `title` as `--window` for everything that follows. `active: true` is the one `--window
+focused` resolves to.
+
 ## Reading the tree
 
 ```bash
-use-computer tree --use laptop                    # the focused window, pruned
+use-computer tree --window "Conferma"             # that window, pruned
 use-computer tree --role button                   # only buttons
 use-computer tree --window all --depth 3          # every window, shallow
-use-computer tree --of 0/2/1                      # expand a subtree that was truncated
+use-computer tree --of 0/2/1                      # expand a subtree
+use-computer tree --full                          # everything, unabbreviated
 ```
 
 Each node looks like this:
 
 ```json
 {"id": "0/2/1/3", "role": "button", "name": "Invia",
- "states": ["enabled", "focusable", "showing"],
- "actions": ["click", "focus"],
- "box": {"x": 412, "y": 260, "width": 88, "height": 32, "space": "actuation"},
- "center": {"x": 456, "y": 276, "space": "actuation"}}
+ "actions": ["click", "focus"], "box": [412, 260, 88, 32]}
 ```
 
+- **`box` is `[x, y, width, height]`** in actuation units. To click it by coordinate, aim at its
+  centre: `x + width/2`, `y + height/2`, with `--space actuation`.
 - **`actions`** tells you what the platform can do to this node. An **empty list** means it can
   only be clicked by coordinate — that is rung two, and `click` handles it for you.
-- **`truncated: true`** means the budget cut the tree. The `truncated_ids` are where; re-enter
-  with `--of <id>`. Never assume an element is absent because a truncated tree did not show it.
+- **`states`** appears only when there is something surprising to say: `disabled`, `checked`,
+  `selected`, `expanded`. **No `states` means an ordinary, enabled, visible node.** Do not read the
+  absence of `disabled` as anything other than "it is enabled".
+
+## Three things are abbreviated. Each says so, and each has a way back
+
+An abbreviation mistaken for the whole thing turns a correct answer into a wrong conclusion, so
+check for these before concluding anything is missing:
+
+- **`offscreen_children: 5`** — this node has five descendants that are not on screen, most often
+  the items of a closed menu. They are real and still operable: `--of <id>` expands them, and
+  `click --name "Preferences"` works **without** opening the menu at all.
+- **`truncated: true`** — the node budget cut the tree. `truncated_ids` says where; `--of <id>`
+  re-enters. Never conclude an element is absent from a truncated tree.
+- **A `value` ending in `…`** — the text was clamped. It is there to identify the element, not to
+  read its contents; a terminal or an editor would otherwise send you its entire buffer.
+
+`--full` turns all three off at once.
 - **`root: null`** with a `reason` means there is no tree here: `unavailable` (no provider, or a
   vnc profile), `denied` (permission), `empty` (the app exposes nothing). A `screenshot` path comes
   back with it — that is your cue to switch to ui-locator.

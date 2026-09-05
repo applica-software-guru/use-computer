@@ -3,7 +3,7 @@ title: "Architecture"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.1"
+version: "1.2"
 ---
 
 # Architecture
@@ -22,7 +22,8 @@ keys.py           canonical key syntax → per-backend tables
 compare.py        before/after screenshot comparison (pillow)
 config.py         project-root discovery, layered settings, config show
 tree.py           pure: UINode, Box, TreeScope, TreeResult, NodeSelector, Via
-selectors.py      pure: match a NodeSelector against a tree, prune, budget
+selectors.py      pure: match a NodeSelector against a tree, prune, budget, clamp text,
+                  keep notable states, count what is off screen instead of expanding it
 backends/
   base.py         the Protocol + BackendNotAvailableError
   local.py        pynput + mss          (extra: local)
@@ -50,8 +51,11 @@ all. It is selected by the **running platform**, never by configuration.
 `push button`, UIA's `Button` and AX's `AXButton` all become `button`, and the canonical action
 names map back onto `Action.do_action`, control patterns and `AXPress` respectively.
 
-Pruning, the node budget and selector matching live in `selectors.py` and operate on an already
-built tree, so they are pure functions over `UINode` and test without a desktop. That matters: no
+Pruning, the node budget, the notable-state filter, the off-screen summary and selector matching
+all live in `selectors.py` and operate on an already built tree, so they are pure functions over
+`UINode` and test without a desktop. Everything that shapes what the caller sees belongs here and
+not in a provider: three platforms would otherwise abbreviate three different ways, and each
+decision would need a desktop to test. That matters: no
 CI runner has a session bus, a logged-in desktop or an Accessibility grant, so the platform
 providers are unreachable there by construction and everything worth testing has to sit above
 them.

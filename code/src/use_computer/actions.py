@@ -200,7 +200,10 @@ class TreeAction(BaseAction):
     role: str | None = None
     name: str | None = None
     of: str | None = Field(default=None, description="Re-enter at a node id from an earlier tree.")
-    all: bool = Field(default=False, description="No pruning and no budget.")
+    full: bool = Field(
+        default=False,
+        description="Everything: no pruning, no budget, every state, every subtree expanded.",
+    )
     out: Path | None = Field(default=None, description="Write the tree JSON here instead.")
     fallback: bool | None = Field(
         default=None, description="Screenshot when there is no tree. None uses configuration."
@@ -210,6 +213,12 @@ class TreeAction(BaseAction):
     @classmethod
     def _parse_window(cls, value: Any) -> Any:
         return TreeScope.parse(value) if isinstance(value, str) else value
+
+
+class WindowsAction(BaseAction):
+    """List what is open. The cheapest read there is, and the one to make first."""
+
+    action: Literal["windows"] = "windows"
 
 
 class _ElementAction(BaseAction, _Selectable):
@@ -273,6 +282,7 @@ Action = Annotated[
     | KeyAction
     | ScreenshotAction
     | TreeAction
+    | WindowsAction
     | FocusAction
     | ToggleAction
     | ExpandAction

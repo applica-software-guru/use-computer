@@ -44,6 +44,7 @@ from use_computer.actions import (
     ToggleAction,
     TreeAction,
     TypeAction,
+    WindowsAction,
 )
 from use_computer.config import ResolvedConfig, profile_env_var, write_initial_config
 from use_computer.config import load as load_config
@@ -476,6 +477,16 @@ def screenshot(
 
 
 @app.command()
+def windows(
+    use: UseOption = None,
+    verbose: VerboseOption = 0,
+) -> None:
+    """List what is open. Make this call first: it costs a fraction of a tree."""
+    config = _config(use, verbose=verbose)
+    _run([WindowsAction()], config, verbose)
+
+
+@app.command()
 def tree(
     window: WindowOption = None,
     depth: Annotated[int | None, typer.Option("--depth", help="Maximum depth.")] = None,
@@ -484,7 +495,10 @@ def tree(
     of: Annotated[
         str | None, typer.Option("--of", help="Re-enter at a node id from an earlier tree.")
     ] = None,
-    all: Annotated[bool, typer.Option("--all", help="No pruning and no budget.")] = False,
+    full: Annotated[
+        bool,
+        typer.Option("--full", help="Everything: no pruning, no budget, all fields, all subtrees."),
+    ] = False,
     out: Annotated[
         Path | None, typer.Option("--out", help="Write the tree JSON here and return its path.")
     ] = None,
@@ -504,7 +518,7 @@ def tree(
                 role=role,
                 name=name,
                 of=of,
-                all=all,
+                full=full,
                 out=out,
                 fallback=False if no_fallback else None,
             )
@@ -890,6 +904,7 @@ _COMMANDS = frozenset(
         "key",
         "screenshot",
         "tree",
+        "windows",
         "focus",
         "toggle",
         "expand",

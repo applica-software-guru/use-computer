@@ -3,7 +3,7 @@ title: "Entities"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.2"
+version: "2.0"
 ---
 
 # Entities
@@ -47,6 +47,10 @@ by parsing the normalised key syntax; backends map it to their own vocabulary.
 `x`, `y`, `width`, `height`, `space: CoordinateSpace`. The geometry of a UI element. The
 accessibility API reports it in **actuation** units.
 
+**Serialises as `[x, y, width, height]`**, and parses from either that array or the object form.
+The space is not repeated on every node because it is always `actuation`: the keys cost more than
+the values, and a tree carries thousands of them.
+
 ### UINode
 
 One element of the accessibility tree:
@@ -54,11 +58,25 @@ One element of the accessibility tree:
 - `id: str` — a structural path in the **full** tree, e.g. `0/2/1/3`
 - `role: str` — canonical, normalised across platforms
 - `name: str | None`, `value: str | None`
-- `states: tuple[str, ...]` — canonical state names (`enabled`, `focusable`, `showing`, …)
+- `states: tuple[str, ...]` — canonical state names. On the way out only the **notable** ones
+  survive: what almost every node reports (`showing`, `enabled`, `focusable`, `visible`,
+  `sensitive`, `selectable`) says nothing and is dropped, while `checked`, `selected`, `expanded`,
+  `modal` and the rest stay. **`disabled` is synthesised** when `enabled` is absent — the platforms
+  report the positive and stay silent on the negative, which is the one case an agent must not miss
+- `offscreen_children: int` — descendants not on screen, counted rather than expanded; `0` when
+  there are none, or when they were expanded
 - `actions: tuple[str, ...]` — the action names this node supports; empty means it can only be
   clicked by coordinate
 - `box: Box`, `center: Coordinate`
 - `children: tuple[UINode, ...]`
+
+### WindowInfo *(frozen)*
+
+One entry of what `windows` returns: `id`, `title: str | None`, `role`, `pid: int | None`,
+`box: Box`, `active: bool`.
+
+`pid` lives here and on nothing else. A window list is where it is worth its bytes; on every node
+of a tree it is repetition.
 
 ### TreeScope
 
@@ -97,7 +115,7 @@ A discriminated union on `action`, with one variant per member of the action set
 `MoveAction`, `ClickAction`, `DoubleClickAction`, `RightClickAction`, `DragAction`,
 `ScrollAction`, `TypeAction`, `KeyAction`, `ScreenshotAction`, `TreeAction`, `FocusAction`,
 `ToggleAction`, `ExpandAction`, `CollapseAction`, `SelectAction`, `SetValueAction`,
-`ShowMenuAction`.
+`ShowMenuAction`, `WindowsAction`.
 
 Fields common to all: `delay: float | None`, `verify: bool`.
 Positional variants carry `Coordinate`s; `TypeAction` carries `text` and an optional rate;
@@ -131,6 +149,7 @@ pixels), `threshold: float`, `bbox: tuple[int, int, int, int] | None`.
 - `change: ChangeReport | None`
 - `screenshot: Screenshot | None`
 - `tree: TreeResult | None` — for `tree`
+- `windows: tuple[WindowInfo, ...] | None` — for `windows`
 - `matched: UINode | None` — the node a selector resolved to
 - `via: Via | None` — the rung actually taken; `action` or `coordinate`, never `auto`
 - `error: ErrorInfo | None`

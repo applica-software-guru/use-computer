@@ -16,6 +16,7 @@ from use_computer.actions import (
     SetValueAction,
     ToggleAction,
     TreeAction,
+    WindowsAction,
 )
 from use_computer.config import Settings
 from use_computer.runner import Session
@@ -64,7 +65,7 @@ def test_tree_budget_reports_truncation_and_where_to_re_enter() -> None:
 
 
 def test_of_re_enters_at_a_node() -> None:
-    result = session().run([TreeAction(of="0/1", all=True)]).results[0]
+    result = session().run([TreeAction(of="0/1", full=True)]).results[0]
     root = result.tree.root  # type: ignore[union-attr]
     assert root is not None and root.id == "0/1"
 
@@ -314,3 +315,110 @@ def test_a_node_with_no_position_is_never_clicked_by_coordinate() -> None:
     assert error is not None and error.type == "ActionNotSupportedError"
     assert "no on-screen position" in error.message
     assert backend.calls == []
+
+
+# --- cheap reads ---------------------------------------------------------------------------------
+
+
+def test_windows_lists_what_is_open() -> None:
+    result = session().run([WindowsAction()])
+    item = result.results[0]
+    assert item.ok
+    assert item.windows is not None
+    assert [w.title for w in item.windows] == ["Conferma"]
+    assert item.windows[0].active is True
+    assert item.windows[0].pid == 4711
+
+
+def test_a_node_serialises_without_its_empty_fields() -> None:
+    from tests.fake_provider import node
+
+    payload = node("0", "button", "Invia", actions=("click",), states=()).model_dump(mode="json")
+    assert payload == {"id": "0", "role": "button", "name": "Invia",
+                       "actions": ["click"], "box": [0, 0, 10, 10]}
+
+
+def test_the_tree_drops_states_that_say_nothing_and_names_the_disabled() -> None:
+    from tests.fake_provider import node
+
+    provider = FakeProvider(
+        root=node(
+            "0",
+            "window",
+            "App",
+            states=("showing", "enabled"),
+            children=(
+                node("0/0", "button", "Ok", states=("showing", "enabled", "focusable")),
+                node("0/1", "button", "No", states=("showing", "focusable")),
+            ),
+        )
+    )
+    root = session(provider).run([TreeAction()]).results[0].tree.root  # type: ignore[union-attr]
+    assert root is not None
+    assert root.states == ()  # nothing surprising about a showing, enabled window
+    by_name = {child.name: child for child in root.children}
+    assert by_name["Ok"].states == ()
+    assert by_name["No"].states == ("disabled",)  # the absence turned into a presence
+
+
+def test_offscreen_subtrees_are_counted_not_expanded() -> None:
+    from tests.fake_provider import node
+
+    provider = FakeProvider(
+        root=node(
+            "0",
+            "window",
+            "App",
+            children=(
+                node(
+                    "0/0",
+                    "menu",
+                    "File",
+                    actions=("click",),
+                    children=(
+                        node("0/0/0", "menuitem", "Prefs", actions=("click",), box=(0, 0, 0, 0)),
+                        node("0/0/1", "menuitem", "Quit", actions=("click",), box=(0, 0, 0, 0)),
+                    ),
+                ),
+            ),
+        )
+    )
+    menu = session(provider).run([TreeAction()]).results[0].tree.root.children[0]  # type: ignore[union-attr]
+    assert menu.children == ()
+    assert menu.offscreen_children == 2
+
+    # ...and the summary changed only what is reported: the item is still addressable.
+    result = session(provider).run(
+        [ClickAction(selector=NodeSelector(role="menuitem", name="Prefs"))]
+    )
+    assert result.ok
+    assert result.results[0].matched is not None
+
+
+def test_full_expands_everything() -> None:
+    from tests.fake_provider import node
+
+    provider = FakeProvider(
+        root=node(
+            "0",
+            "window",
+            "App",
+            states=("showing", "enabled"),
+            children=(
+                node(
+                    "0/0",
+                    "menu",
+                    "File",
+                    actions=("click",),
+                    children=(
+                        node("0/0/0", "menuitem", "Prefs", actions=("click",), box=(0, 0, 0, 0)),
+                    ),
+                ),
+            ),
+        )
+    )
+    root = session(provider).run([TreeAction(full=True)]).results[0].tree.root  # type: ignore[union-attr]
+    assert root is not None
+    assert set(root.states) == {"enabled", "showing"}
+    assert root.children[0].children[0].name == "Prefs"
+    assert root.children[0].offscreen_children == 0

@@ -42,6 +42,12 @@ MAX_TRUNCATED_IDS = 50
 #: Appended to a name or value that was clamped, so a reader can tell.
 ELLIPSIS = "\u2026"
 
+#: States almost every node reports. A field that is nearly always the same says nothing, and a
+#: tree carries thousands of them -- dropping these measured 26% of the payload.
+UNREMARKABLE_STATES = frozenset(
+    {"showing", "enabled", "focusable", "visible", "sensitive", "selectable"}
+)
+
 
 def walk(node: UINode) -> Iterator[UINode]:
     """Pre-order traversal, the order ids are assigned in."""
@@ -147,6 +153,48 @@ def budget(root: UINode, max_nodes: int) -> tuple[UINode, int, bool, tuple[str, 
     return capped, count(capped), True, tuple(cut)
 
 
+def notable_states(node: UINode) -> UINode:
+    """Keep only the states that change a decision, and say when a control is disabled.
+
+    The platforms report the *positive* -- ``enabled``, ``sensitive`` -- and simply stay silent
+    when a control is not. An omitted field is therefore the one case an agent must not miss, so
+    the absence is turned into a presence: ``disabled`` is synthesised rather than inferred.
+    """
+    states = set(node.states)
+    kept = sorted(states - UNREMARKABLE_STATES)
+    if states and not states & {"enabled", "sensitive"}:
+        kept = sorted([*kept, "disabled"])
+    return node.model_copy(
+        update={
+            "states": tuple(kept),
+            "children": tuple(notable_states(child) for child in node.children),
+        }
+    )
+
+
+def summarise_offscreen(node: UINode) -> UINode:
+    """Count the descendants that are not on screen instead of expanding them.
+
+    Of 73 nodes in one measured window, 55 were the items of closed menus: real, operable through
+    the platform, and not visible. Expanding them costs three quarters of the payload before
+    anybody asks for them.
+
+    This decides what to *report*, never what exists -- a selector still resolves against the
+    whole tree, so `click --name "Preferences"` keeps working with the menu closed. That is the
+    thing this function could most easily break.
+    """
+    shown: list[UINode] = []
+    hidden = 0
+    for child in node.children:
+        if child.box.positioned:
+            shown.append(summarise_offscreen(child))
+        else:
+            hidden += count(child)
+    return node.model_copy(
+        update={"children": tuple(shown), "offscreen_children": hidden}
+    )
+
+
 def clamp_text(node: UINode, limit: int) -> UINode:
     """Bound the text a node carries into the caller's context.
 
@@ -157,10 +205,11 @@ def clamp_text(node: UINode, limit: int) -> UINode:
     different hat.
 
     Applied on the way out, never before matching -- a selector must still see the full name.
+    A limit of ``0`` means no clamping.
     """
 
     def clip(text: str | None) -> str | None:
-        if text is None or len(text) <= limit:
+        if text is None or limit <= 0 or len(text) <= limit:
             return text
         return text[:limit] + ELLIPSIS
 
@@ -246,8 +295,10 @@ __all__ = [
     "find",
     "is_interesting",
     "matches",
+    "notable_states",
     "prune",
     "resolve_one",
     "subtree",
+    "summarise_offscreen",
     "walk",
 ]

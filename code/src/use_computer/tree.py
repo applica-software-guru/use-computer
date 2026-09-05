@@ -13,8 +13,9 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from use_computer.compare import Screenshot
 from use_computer.coordinates import Coordinate, CoordinateSpace
@@ -34,6 +35,23 @@ class Box(BaseModel):
     width: int
     height: int
     space: CoordinateSpace = CoordinateSpace.ACTUATION
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_array(cls, data: Any) -> Any:
+        if isinstance(data, (list, tuple)) and len(data) == 4:
+            x, y, width, height = data
+            return {"x": x, "y": y, "width": width, "height": height}
+        return data
+
+    @model_serializer
+    def _as_array(self) -> list[int]:
+        """``[x, y, width, height]``.
+
+        The space is not repeated on every node because it is always actuation, and the keys cost
+        more than the values -- over a tree of thousands of nodes that is most of the payload.
+        """
+        return [self.x, self.y, self.width, self.height]
 
     @property
     def positioned(self) -> bool:
@@ -69,7 +87,35 @@ class UINode(BaseModel):
         description="Canonical actions this node supports. Empty means: click it by coordinate.",
     )
     box: Box
+    offscreen_children: int = Field(
+        default=0,
+        ge=0,
+        description="Descendants not on screen, counted rather than expanded.",
+    )
     children: tuple[UINode, ...] = ()
+
+    @model_serializer
+    def _compact(self) -> dict[str, Any]:
+        """Omit what is empty, and say only what is worth its bytes.
+
+        A tree is only useful if an agent can afford to read it: the obvious shape measured 271
+        bytes a node against 150 for this one, over the same window.
+        """
+        out: dict[str, Any] = {"id": self.id, "role": self.role}
+        if self.name:
+            out["name"] = self.name
+        if self.value:
+            out["value"] = self.value
+        if self.states:
+            out["states"] = list(self.states)
+        if self.actions:
+            out["actions"] = list(self.actions)
+        out["box"] = self.box
+        if self.offscreen_children:
+            out["offscreen_children"] = self.offscreen_children
+        if self.children:
+            out["children"] = list(self.children)
+        return out
 
     @property
     def center(self) -> Coordinate:
@@ -79,6 +125,23 @@ class UINode(BaseModel):
         """Short human form, for an error message a stuck agent has to read."""
         name = f" {self.name!r}" if self.name else ""
         return f"{self.role}{name} at {self.id}"
+
+
+class WindowInfo(BaseModel):
+    """One entry of what ``windows`` returns.
+
+    The cheapest question an agent can ask is "what is open?", and it should not cost a tree:
+    twelve windows measured at 1,429 bytes against 19,752 for a single window's tree.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    title: str | None = None
+    role: str
+    pid: int | None = None
+    box: Box
+    active: bool = False
 
 
 class TreeScopeKind(str, Enum):
@@ -196,4 +259,5 @@ __all__ = [
     "TreeScopeKind",
     "UINode",
     "Via",
+    "WindowInfo",
 ]

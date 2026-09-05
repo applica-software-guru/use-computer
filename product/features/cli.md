@@ -3,7 +3,7 @@ title: "CLI"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.2"
+version: "1.3"
 ---
 
 # CLI
@@ -19,6 +19,7 @@ use-computer click --x 120 --y 340 --use staging
 use-computer type --text "hello" --use staging
 use-computer key ctrl+s --use staging
 use-computer screenshot --use laptop
+use-computer windows --use laptop
 use-computer tree --use laptop
 use-computer click --role button --name "Invia" --use laptop
 use-computer set-value --id 0/2/1 --value "mario@example.com" --use laptop
