@@ -37,14 +37,26 @@ def test_pruning_keeps_ids_from_the_full_tree() -> None:
     assert "0/1/0" in ids(pruned)
 
 
-def test_pruning_drops_what_is_off_screen() -> None:
+def test_pruning_drops_what_is_off_screen_and_inert() -> None:
     tree = node(
         "0",
         "window",
         "App",
-        children=(node("0/0", "button", "Hidden", box=(0, 0, 0, 0), actions=("click",)),),
+        children=(node("0/0", "label", "Hidden", box=(0, 0, 0, 0)),),
     )
     assert ids(prune(tree)) == ["0"]
+
+
+def test_pruning_keeps_what_the_platform_can_operate_wherever_it_is() -> None:
+    # The items of a closed menu have no position and are still the thing an agent came for:
+    # reaching File > Preferences without opening the menu is the point of acting through the API.
+    tree = node(
+        "0",
+        "window",
+        "App",
+        children=(node("0/0", "menuitem", "Preferences", box=(0, 0, 0, 0), actions=("click",)),),
+    )
+    assert ids(prune(tree)) == ["0", "0/0"]
 
 
 def test_a_named_node_survives_even_without_actions() -> None:

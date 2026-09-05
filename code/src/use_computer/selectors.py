@@ -54,7 +54,7 @@ def count(node: UINode) -> int:
 def is_on_screen(node: UINode) -> bool:
     if HIDDEN_STATES & set(node.states):
         return False
-    return node.box.width > 0 and node.box.height > 0
+    return node.box.positioned
 
 
 def is_interactable(node: UINode) -> bool:
@@ -70,7 +70,15 @@ def carries_text(node: UINode) -> bool:
 
 
 def is_interesting(node: UINode) -> bool:
-    """The default pruning rule: on-screen, and either operable or saying something."""
+    """The default pruning rule.
+
+    On-screen and either operable or saying something -- **or** operable through the platform
+    wherever it is. The items of a closed menu have no position and are still the thing an agent
+    came for: reaching "File > Preferences" without opening the menu first is the whole point of
+    acting through the accessibility API.
+    """
+    if node.actions:
+        return True
     return is_on_screen(node) and (is_interactable(node) or carries_text(node))
 
 

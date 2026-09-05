@@ -3,7 +3,7 @@ title: "UI Tree"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.0"
+version: "1.1"
 ---
 
 # UI Tree
@@ -64,8 +64,22 @@ An unpruned desktop tree is thousands of nodes. Poured into an agent's context i
 base64 that screenshots no longer return, because it *looks* useful.
 
 The default keeps a node when it is on-screen and either **interactable** (an actionable role, or
-focusable, or editable) or **carries text** (a name, a label, a value). A container whose only
-contribution is nesting is collapsed into its child. A node budget caps the total.
+focusable, or editable) or **carries text** (a name, a label, a value) — **or** when the platform
+can operate it, wherever it is. A container whose only contribution is nesting is collapsed into
+its child. A node budget caps the total.
+
+That last clause matters. The items of a closed menu have no position and are still the thing an
+agent came for: reaching **File > Preferences** without opening the menu first is the whole point
+of acting through the platform API. They are kept, and their `box` is honestly empty.
+
+## A node that is nowhere
+
+A platform reports an element it is not currently rendering with a sentinel rather than a position
+— AT-SPI uses `INT_MIN`. Such a box is normalised to zero size, and `positioned` is false. An
+element like that can be operated through the API and **cannot be clicked**: an action that would
+have to fall back to its centre refuses instead, because that centre is arithmetic and not a place.
+Clicking it is precisely the failure [coordinate-spaces.md](coordinate-spaces.md) exists to
+prevent.
 
 **Truncation is never silent.** The result carries `truncated`, `node_count` and the ids that were
 cut, and `--of ID` re-enters at any of them — so a truncated tree is a starting point, not a dead

@@ -113,9 +113,12 @@ class AmbiguousNodeError(UseComputerError):
 class ActionNotSupportedError(UseComputerError):
     """The matched node does not support the requested action."""
 
-    def __init__(self, action: str, node: str, supported: tuple[str, ...]) -> None:
+    def __init__(
+        self, action: str, node: str, supported: tuple[str, ...], reason: str | None = None
+    ) -> None:
         self.action = action
         self.node = node
         self.supported = supported
         offer = ", ".join(supported) if supported else "none"
-        super().__init__(f"{node} does not support {action!r}. It supports: {offer}")
+        detail = f" {reason}" if reason else ""
+        super().__init__(f"{node} does not support {action!r}.{detail} It supports: {offer}")

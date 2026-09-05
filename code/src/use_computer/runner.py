@@ -432,15 +432,35 @@ class Session:
             # double_click, right_click, scroll: the element says where, the pointer does it.
             if requested is Via.ACTION:
                 raise ActionNotSupportedError(action.action, node.describe(), node.actions)
+            self._require_position(action.action, node)
             return Via.COORDINATE
 
         if requested is Via.COORDINATE:
+            self._require_position(action.action, node)
             return Via.COORDINATE
         if wanted in node.actions:
             return Via.ACTION
         if requested is Via.ACTION:
             raise ActionNotSupportedError(wanted, node.describe(), node.actions)
+        self._require_position(action.action, node)
         return Via.COORDINATE
+
+    @staticmethod
+    def _require_position(action: str, node: UINode) -> None:
+        """Rung two needs somewhere to click, and not every node is anywhere.
+
+        A node the platform reports without a position -- an item of a closed menu -- has a
+        centre that is arithmetic, not a place. Clicking it is the exact failure this tool
+        exists to prevent, so it refuses instead.
+        """
+        if not node.box.positioned:
+            raise ActionNotSupportedError(
+                action,
+                node.describe(),
+                node.actions,
+                reason="It has no on-screen position, so it can only be operated through the "
+                "platform API.",
+            )
 
     def _resolve_node(self, selector: NodeSelector) -> UINode:
         """One node, from a tree read right now.

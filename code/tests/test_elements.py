@@ -282,3 +282,35 @@ def test_closing_a_session_closes_the_provider() -> None:
     live = Session(FakeBackend(), profile="fake", provider=provider)
     live.close()
     assert provider.closed is True
+
+
+def test_a_node_with_no_position_is_never_clicked_by_coordinate() -> None:
+    # AT-SPI reports an unrendered element at INT_MIN. Its centre is arithmetic, not a place;
+    # clicking it is the exact failure the coordinate rules exist to prevent.
+    from tests.fake_provider import node
+
+    provider = FakeProvider(
+        root=node(
+            "0",
+            "window",
+            "App",
+            children=(
+                node("0/0", "menuitem", "Preferences", actions=("click",), box=(0, 0, 0, 0)),
+            ),
+        )
+    )
+    backend = FakeBackend()
+    live = Session(backend, profile="fake", provider=provider)
+    selector = NodeSelector(role="menuitem", name="Preferences")
+
+    # Rung one is fine: the platform does not need a position.
+    assert live.run([ClickAction(selector=selector)]).ok
+    assert provider.calls == [("0/0", "click", None)]
+    assert backend.calls == []
+
+    # Rung two is refused rather than aimed at a garbage coordinate.
+    result = live.run([ClickAction(selector=selector, via=Via.COORDINATE)])
+    error = result.results[0].error
+    assert error is not None and error.type == "ActionNotSupportedError"
+    assert "no on-screen position" in error.message
+    assert backend.calls == []

@@ -36,6 +36,17 @@ class Box(BaseModel):
     space: CoordinateSpace = CoordinateSpace.ACTUATION
 
     @property
+    def positioned(self) -> bool:
+        """Whether this box is anywhere at all.
+
+        A platform reports an element that is not currently rendered -- the items of a closed
+        menu, say -- with a sentinel rather than a position. Such an element is still operable
+        through the accessibility API, and its centre is not a place: clicking it would land
+        wherever a garbage coordinate happens to point.
+        """
+        return self.width > 0 and self.height > 0
+
+    @property
     def center(self) -> Coordinate:
         """The point to click when the platform offers no way to operate the element."""
         return Coordinate(

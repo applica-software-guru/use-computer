@@ -8,6 +8,7 @@ error, because the agent reading it is the one that has to get unstuck.
 
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import Any
 
 from use_computer.accessibility import roles
@@ -16,6 +17,12 @@ from use_computer.errors import UITreeUnavailableError
 from use_computer.tree import Box, TreeScope, TreeScopeKind, UINode
 
 SYSTEM_PACKAGE = "gir1.2-atspi-2.0 (and python3-pyatspi on Debian/Ubuntu)"
+
+#: Milliseconds any single AT-SPI call may take. AT-SPI is D-Bus, and every property read is a
+#: round trip into another process: one application that is wedged, or merely slow to answer,
+#: otherwise stalls the whole snapshot until the default timeout of many seconds. A short bound
+#: with per-application recovery turns "the desktop hung" into "that one app was skipped".
+CALL_TIMEOUT_MS = 800
 
 BUS_HINT = (
     "The accessibility bus does not appear to be running, so applications expose nothing over "
@@ -38,6 +45,9 @@ class AtspiProvider:
                 "the Atspi typelib is not installed.", extra="tree", system=SYSTEM_PACKAGE
             ) from exc
         self._atspi = Atspi
+        # Older bindings do not expose it; the default timeout then applies.
+        with suppress(Exception):
+            Atspi.set_timeout(CALL_TIMEOUT_MS, CALL_TIMEOUT_MS)
         #: node id -> accessible, filled by the last snapshot. `perform` looks up here, and the
         #: runner always snapshots immediately before acting, so the mapping is never stale.
         self._index: dict[str, Any] = {}
@@ -46,8 +56,19 @@ class AtspiProvider:
 
     def snapshot(self, scope: TreeScope, depth: int) -> UINode:
         self._index = {}
-        root = self._root_for(scope)
-        return self._build(root, "0", depth)
+        try:
+            root = self._root_for(scope)
+            return self._build(root, "0", depth)
+        except UITreeUnavailableError:
+            raise
+        except Exception as exc:
+            # A GLib/dbind failure is not a Python error the caller can act on. Turning it into
+            # the tool's own vocabulary is what lets `tree` keep its promise: either structure,
+            # or a stated reason and the screenshot to fall back to.
+            raise UITreeUnavailableError(
+                f"AT-SPI did not answer: {exc}. An application on this desktop is not responding "
+                "on the accessibility bus; try --window with a title, or use a screenshot."
+            ) from exc
 
     def _desktop(self) -> Any:
         try:
@@ -66,28 +87,45 @@ class AtspiProvider:
             return desktop
 
         for app in self._children(desktop):
-            if scope.kind is TreeScopeKind.PID and str(self._pid(app)) != scope.value:
+            # One unresponsive application must not cost the whole snapshot. Skipping it loses
+            # that application; letting it raise loses the desktop.
+            try:
+                if scope.kind is TreeScopeKind.PID and str(self._pid(app)) != scope.value:
+                    continue
+                for window in self._children(app):
+                    if scope.kind is TreeScopeKind.FOCUSED and self._is_active(window):
+                        return window
+                    if (
+                        scope.kind is TreeScopeKind.TITLE
+                        and scope.value
+                        and scope.value.casefold() in (window.get_name() or "").casefold()
+                    ):
+                        return window
+                    if scope.kind is TreeScopeKind.PID:
+                        return window
+            except Exception:
                 continue
-            for window in self._children(app):
-                if scope.kind is TreeScopeKind.FOCUSED and self._is_active(window):
-                    return window
-                if (
-                    scope.kind is TreeScopeKind.TITLE
-                    and scope.value
-                    and scope.value.casefold() in (window.get_name() or "").casefold()
-                ):
-                    return window
-                if scope.kind is TreeScopeKind.PID:
-                    return window
 
         if scope.kind is TreeScopeKind.FOCUSED:
-            return desktop
+            # Nothing claimed to be active. The desktop is a worse answer than a stated reason,
+            # because it looks like a tree and is not the window the agent meant.
+            raise UITreeUnavailableError(
+                "no window reports itself as active. Name one with --window TITLE or @PID, or "
+                "use --window all."
+            )
         raise UITreeUnavailableError(f"no window matches {scope.value!r}.")
 
     def _children(self, obj: Any) -> list[Any]:
+        try:
+            total = obj.get_child_count()
+        except Exception:
+            return []
         out = []
-        for index in range(obj.get_child_count()):
-            child = obj.get_child_at_index(index)
+        for index in range(total):
+            try:
+                child = obj.get_child_at_index(index)
+            except Exception:
+                continue
             if child is not None:
                 out.append(child)
         return out
@@ -110,17 +148,23 @@ class AtspiProvider:
         return tuple(sorted(set(names)))
 
     def _is_active(self, window: Any) -> bool:
-        return "active" in {s.lower() for s in self._states(window)} or "focused" in self._states(
-            window
-        )
+        states = set(self._states(window))
+        return "active" in states or "focused" in states
+
+    #: AT-SPI reports an element that is not currently rendered at INT_MIN with a 1x1 size --
+    #: the items of a closed menu, for instance. That is a sentinel, not a position, and letting
+    #: it through would hand an agent a coordinate that clicks somewhere absurd.
+    UNPOSITIONED = -(2**31)
 
     def _box(self, obj: Any) -> Box:
         try:
             component = obj.get_component_iface()
             extents = component.get_extents(self._atspi.CoordType.SCREEN)
-            return Box(x=extents.x, y=extents.y, width=extents.width, height=extents.height)
         except Exception:
             return Box(x=0, y=0, width=0, height=0)
+        if extents.x <= self.UNPOSITIONED or extents.y <= self.UNPOSITIONED:
+            return Box(x=0, y=0, width=0, height=0)
+        return Box(x=extents.x, y=extents.y, width=extents.width, height=extents.height)
 
     def _value(self, obj: Any) -> str | None:
         try:
