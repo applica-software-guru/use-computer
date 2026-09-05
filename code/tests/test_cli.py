@@ -346,3 +346,28 @@ def test_set_value_requires_its_value(
 def test_every_element_command_is_a_known_command_for_the_default_dispatch() -> None:
     for name in ("tree", "focus", "toggle", "expand", "collapse", "select", "set-value"):
         assert apply_default_command(["use-computer", name]) == ["use-computer", name]
+
+
+# --- a missing required option is bad usage, on every supported typer ----------------------------
+
+
+@pytest.mark.parametrize(
+    ("argv", "flag"),
+    [
+        (["type"], "--text"),
+        (["drag"], "--from-x"),
+        (["scroll"], "--amount"),
+        (["set-value", "--role", "text"], "--value"),
+    ],
+)
+def test_a_missing_required_option_exits_2_and_names_the_flag(
+    runner: CliRunner, write_config: WriteConfig, argv: list[str], flag: str
+) -> None:
+    # typer does not enforce a required option the same way across the supported range: at the
+    # 0.16 floor it hands the command None, and the model then reports *failure* where the
+    # contract promises *bad usage*. An agent branching on the exit code would retry a call that
+    # was simply wrong. These run in the matrix, because the floor is the only place it shows.
+    write_config(CONFIG)
+    result = invoke(runner, *argv)
+    assert result.exit_code == EXIT_USAGE
+    assert flag in strip_ansi(result.stderr)

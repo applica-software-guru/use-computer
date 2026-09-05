@@ -150,6 +150,21 @@ FormatOption = Annotated[
 ]
 
 
+def _required(value: Any, flag: str) -> Any:
+    """Enforce a required option ourselves, and exit 2 rather than 1.
+
+    typer does not enforce one the same way across the supported range: at the 0.16 floor it hands
+    the command ``None``, which then fails validation and reports *failure* where the contract
+    promises *bad usage* -- and an agent branching on the exit code retries a call that was simply
+    wrong. Relying on a dependency's behaviour without testing the version actually supported is
+    the same mistake as the undeclared `click` import.
+    """
+    if value is None:
+        _err.print(f"[red]error:[/red] {flag} is required")
+        raise typer.Exit(EXIT_USAGE)
+    return value
+
+
 def _build(
     kind: Any, selector: NodeSelector | None, via: Via, **fields: Any
 ) -> Action:
@@ -372,10 +387,10 @@ def right_click(
 
 @app.command()
 def drag(
-    from_x: Annotated[int, typer.Option("--from-x")],
-    from_y: Annotated[int, typer.Option("--from-y")],
-    to_x: Annotated[int, typer.Option("--to-x")],
-    to_y: Annotated[int, typer.Option("--to-y")],
+    from_x: Annotated[int | None, typer.Option("--from-x")] = None,
+    from_y: Annotated[int | None, typer.Option("--from-y")] = None,
+    to_x: Annotated[int | None, typer.Option("--to-x")] = None,
+    to_y: Annotated[int | None, typer.Option("--to-y")] = None,
     button: Annotated[MouseButton, typer.Option("--button")] = MouseButton.LEFT,
     use: UseOption = None,
     space: SpaceOption = None,
@@ -385,6 +400,10 @@ def drag(
     verbose: VerboseOption = 0,
 ) -> None:
     """Press, move, release."""
+    from_x = _required(from_x, "--from-x")
+    from_y = _required(from_y, "--from-y")
+    to_x = _required(to_x, "--to-x")
+    to_y = _required(to_y, "--to-y")
     config = _config(use, space=space, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
     action = DragAction(
         from_x=from_x, from_y=from_y, to_x=to_x, to_y=to_y, space=space, button=button
@@ -394,7 +413,7 @@ def drag(
 
 @app.command()
 def scroll(
-    amount: Annotated[int, typer.Option("--amount")],
+    amount: Annotated[int | None, typer.Option("--amount")] = None,
     direction: Annotated[ScrollDirection, typer.Option("--direction")] = ScrollDirection.DOWN,
     x: XOption = None,
     y: YOption = None,
@@ -413,6 +432,7 @@ def scroll(
     verbose: VerboseOption = 0,
 ) -> None:
     """Scroll, at an element or a coordinate."""
+    amount = _required(amount, "--amount")
     config = _config(use, space=space, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
     selector = _selector(id, role, name, exact, nth, window)
     _run(
@@ -429,7 +449,7 @@ def scroll(
 
 @app.command("type")
 def type_text(
-    text: Annotated[str, typer.Option("--text")],
+    text: Annotated[str | None, typer.Option("--text")] = None,
     rate: Annotated[
         float | None, typer.Option("--rate", help="Seconds between keystrokes.")
     ] = None,
@@ -440,6 +460,7 @@ def type_text(
     verbose: VerboseOption = 0,
 ) -> None:
     """Type literal text. For shortcuts use `key`."""
+    text = _required(text, "--text")
     config = _config(use, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
     _run([TypeAction(text=text, rate=rate)], config, verbose)
 
@@ -562,7 +583,10 @@ def _element_command(kind: Any, help_text: str) -> Any:
 
 @app.command("set-value")
 def set_value(
-    value: Annotated[str, typer.Option("--value", help="The text to assign.")],
+    value: Annotated[
+        str | None,
+        typer.Option("--value", help="The text to assign."),
+    ] = None,
     id: IdOption = None,
     role: RoleOption = None,
     name: NameOption = None,
@@ -579,6 +603,7 @@ def set_value(
 
     Not a faster `type`: this emits no key events, and some applications only validate on them.
     """
+    value = _required(value, "--value")
     config = _config(use, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
     selector = _require_selector(id, role, name, exact, nth, window)
     _run([SetValueAction(selector=selector, value=value)], config, verbose)
