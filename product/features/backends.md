@@ -3,7 +3,7 @@ title: "Backends"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.2"
+version: "1.3"
 ---
 
 # Backends
@@ -40,21 +40,26 @@ structurally cannot, because RFB carries pixels and nothing else.
 So it is a second Protocol, `AccessibilityProvider`, chosen by the **running platform** rather than
 by configuration — a profile does not get to claim macOS accessibility on Linux:
 
-| Platform | API | Binding |
-| --- | --- | --- |
-| Linux | AT-SPI 2 | PyGObject + the system `Atspi` typelib |
-| Windows | UI Automation | `uiautomation` |
-| macOS | `AXUIElement` | `pyobjc-framework-ApplicationServices` |
+| Platform | API | Binding | How to install it |
+| --- | --- | --- | --- |
+| Windows | UI Automation | `uiautomation` | `pip install "use-computer-cli[local,tree]"` |
+| macOS | `AXUIElement` | `pyobjc-framework-ApplicationServices` | the same |
+| Linux | AT-SPI 2 | the distro's PyGObject | **not the extra** — see below |
+
+**Linux is not a pip problem, and the `tree` extra deliberately covers nothing there.** PyGObject
+has no Linux wheel, so listing it in the extra made `pip install "use-computer-cli[tree]"` build
+from source, need pycairo and system headers, and *fail* — leaving the user with no CLI at all
+rather than a CLI missing one capability. The bindings are already on almost every desktop; a
+virtualenv only has to be allowed to see them:
 
 ```bash
-pip install "use-computer-cli[local,tree]"
+sudo apt install python3-gi gir1.2-atspi-2.0
+python3 -m venv --system-site-packages .venv
+.venv/bin/pip install "use-computer-cli[local]"
 ```
 
-Linux is the awkward one: there is no `pyatspi` on PyPI. The bindings ship as a distro package
-(`gir1.2-atspi-2.0`, plus `python3-pyatspi` on Debian and Ubuntu) and PyGObject reaches them
-through GObject Introspection, so `pip install` alone cannot finish the job there.
-`UITreeUnavailableError` must therefore name **both** halves — the extra and the system package —
-because the agent reading that message is the one that has to get unstuck.
+`UITreeUnavailableError` says exactly that when the bindings are missing, and does **not** offer an
+extra that would not help — a wrong install line costs every new user their first ten minutes.
 
 On a vnc profile, `tree` and every element-addressed action fail immediately with that error and
 the agent uses coordinates. No emulation, no pretending.

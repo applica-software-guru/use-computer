@@ -264,8 +264,9 @@ of an element action is also the cheapest way to check a selector is unambiguous
   does offer. `click` already falls back to a coordinate on its own, so this means you asked for
   something with no coordinate form, like `set-value` on a node that is not editable.
 - **`UITreeUnavailableError`** — no accessibility here. On a vnc profile that is permanent: use
-  screenshots and coordinates. Otherwise the message names the extra and, on Linux, the system
-  package to install.
+  screenshots and coordinates. Otherwise the message names exactly what to install: an extra on
+  Windows and macOS, and on Linux the distro packages plus a `--system-site-packages` virtualenv,
+  because the extra does not help there.
 - **`BackendNotAvailableError`** — the extra is not installed. The message names it.
 - **Local backend not enabled** — the `local` backend controls the user's own machine and needs
   an explicit opt-in. Tell the user to set `allow-local = true` in the profile; do not work

@@ -1,6 +1,6 @@
 ---
 title: "The tree extra cannot install on Linux: PyGObject builds from source and fails"
-status: open
+status: resolved
 author: "bruno.fortunato@applica.guru"
 created-at: "2026-09-05T00:00:00.000Z"
 ---

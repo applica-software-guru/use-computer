@@ -24,16 +24,21 @@ with a Python API underneath.
 pip install use-computer-cli            # no backend
 pip install "use-computer-cli[local]"   # drive this machine's display (pynput + mss)
 pip install "use-computer-cli[vnc]"     # drive a remote framebuffer over RFB (vncdotool)
-pip install "use-computer-cli[tree]"    # read the accessibility tree
+pip install "use-computer-cli[tree]"    # read the accessibility tree (Windows, macOS)
 ```
 
 Backends and the accessibility bindings are optional extras, imported lazily, so the package
 installs without them.
 
-The `tree` extra installs one binding per platform: `uiautomation` on Windows,
-`pyobjc-framework-ApplicationServices` on macOS, PyGObject on Linux. **Linux needs a system package
-as well** -- there is no `pyatspi` on PyPI, so the AT-SPI bindings come from `gir1.2-atspi-2.0`
-(plus `python3-pyatspi` on Debian and Ubuntu). The error names both halves when one is missing.
+**On Linux, do not use the `tree` extra.** PyGObject has no Linux wheel, so pip would build it from
+source and fail. The bindings are already on almost every desktop; the virtualenv just has to see
+them:
+
+```bash
+sudo apt install python3-gi gir1.2-atspi-2.0
+python3 -m venv --system-site-packages .venv
+.venv/bin/pip install "use-computer-cli[local]"
+```
 
 The distribution is `use-computer-cli` because `use-computer` is taken on PyPI by an unrelated
 project. The command it installs is `use-computer`, and the package it imports is `use_computer`.

@@ -75,7 +75,12 @@ class UITreeUnavailableError(UseComputerError):
         if extra:
             parts.append(f'Install it with: pip install "use-computer-cli[{extra}]"')
         if system:
-            parts.append(f"On this platform you also need the system package: {system}")
+            # On Linux there is no useful extra to name -- the packages *are* the fix, not an
+            # afterthought to one -- so the sentence must not read as "and also".
+            if extra:
+                parts.append(f"On this platform you also need: {system}")
+            else:
+                parts.append(f"To fix it, {system}")
         super().__init__(" ".join(parts))
 
 

@@ -54,14 +54,15 @@ class AccessibilityProvider(Protocol):
         """Release whatever the provider holds."""
 
 
-def require(module: str, *, extra: str, system: str | None = None) -> ModuleType:
+def require(module: str, *, extra: str | None, system: str | None = None) -> ModuleType:
     """Import a platform binding, or say exactly what to install.
 
     Called inside a provider's constructor, never at module import: otherwise
     ``use-computer --help`` stops working on a machine without the extra.
 
     Raises:
-        UITreeUnavailableError: naming the extra and, where one is needed, the system package.
+        UITreeUnavailableError: naming the extra where there is one, and the system packages where
+            those are what actually works -- on Linux there is no useful extra to name.
     """
     try:
         return import_module(module)

@@ -3,7 +3,7 @@ title: "Tech Stack"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.3"
+version: "1.4"
 ---
 
 # Tech Stack
@@ -48,12 +48,12 @@ Backends are optional extras, imported lazily, so the package installs without t
   | --- | --- | --- |
   | `win32` | `uiautomation >= 2.0` | Pure Python over comtypes, no compiler. 2.0.29 shipped August 2025. |
   | `darwin` | `pyobjc-framework-ApplicationServices >= 10` | `AXUIElement` from the source. 12.2.2 shipped August 2026. |
-  | `linux` | `PyGObject >= 3.46` | The supported AT-SPI binding — but see below. |
 
-  **Linux needs a system package too.** There is no `pyatspi` on PyPI: the bindings ship as
-  `gir1.2-atspi-2.0` (plus `python3-pyatspi` on Debian and Ubuntu) and PyGObject reaches them
-  through GObject Introspection. `pip install` alone cannot finish the job, so
-  `UITreeUnavailableError` names both halves.
+  **Linux is deliberately absent from the extra.** PyGObject has no Linux wheel, so naming it here
+  made `pip install "use-computer-cli[tree]"` build from source, need pycairo and system headers,
+  and fail outright — the user got no CLI at all, which is strictly worse than a CLI without one
+  capability. The AT-SPI bindings come from the distro (`python3-gi`, `gir1.2-atspi-2.0`) and are
+  reached with a `--system-site-packages` virtualenv. The error message says so.
 
   Not **dogtail**: it is the obvious Linux shortcut and is GPLv2 — fine for a test harness that
   runs it, wrong for a permissively licensed library that imports it. Not **atomacos**: its last

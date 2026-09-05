@@ -16,7 +16,14 @@ from use_computer.accessibility.base import require
 from use_computer.errors import UITreeUnavailableError
 from use_computer.tree import Box, TreeScope, TreeScopeKind, UINode, WindowInfo
 
-SYSTEM_PACKAGE = "gir1.2-atspi-2.0 (and python3-pyatspi on Debian/Ubuntu)"
+#: What actually gets AT-SPI working on Linux. Not an extra: PyGObject has no Linux wheel, so
+#: asking pip for it builds from source and fails. The distro has it; a virtualenv only has to be
+#: allowed to see it.
+SYSTEM_HINT = (
+    "install the distro packages and let the virtualenv see them: "
+    "`sudo apt install python3-gi gir1.2-atspi-2.0` then "
+    "`python3 -m venv --system-site-packages .venv`"
+)
 
 #: Milliseconds any single AT-SPI call may take. AT-SPI is D-Bus, and every property read is a
 #: round trip into another process: one application that is wedged, or merely slow to answer,
@@ -36,13 +43,13 @@ class AtspiProvider:
     name = "atspi"
 
     def __init__(self) -> None:
-        gi = require("gi", extra="tree", system=SYSTEM_PACKAGE)
+        gi = require("gi", extra=None, system=SYSTEM_HINT)
         try:
             gi.require_version("Atspi", "2.0")
             from gi.repository import Atspi  # noqa: PLC0415 - deliberately not at module import
         except (ImportError, ValueError) as exc:
             raise UITreeUnavailableError(
-                "the Atspi typelib is not installed.", extra="tree", system=SYSTEM_PACKAGE
+                "the Atspi typelib is not installed.", system=SYSTEM_HINT
             ) from exc
         self._atspi = Atspi
         # Older bindings do not expose it; the default timeout then applies.

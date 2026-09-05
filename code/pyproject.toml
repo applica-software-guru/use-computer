@@ -46,10 +46,14 @@ vnc = ["vncdotool>=1.3"]
 #
 # Not dogtail (GPLv2 -- fine to run, wrong to import from a permissively licensed library) and not
 # atomacos (last release 3.3.0, May 2021 -- the same staleness argument that ruled out pyautogui).
+# Linux is deliberately absent. PyGObject has no Linux wheel, so listing it here made
+# `pip install "use-computer-cli[tree]"` build from source, need pycairo and system headers, and
+# fail -- leaving the user with no CLI at all rather than a CLI missing one capability. The AT-SPI
+# bindings come from the distro (python3-gi, gir1.2-atspi-2.0) and are reached with a
+# --system-site-packages virtualenv; the error message says so when they are absent.
 tree = [
     "uiautomation>=2.0; sys_platform == 'win32'",
     "pyobjc-framework-ApplicationServices>=10; sys_platform == 'darwin'",
-    "PyGObject>=3.46; sys_platform == 'linux'",
 ]
 dev = [
     "pytest>=8",
