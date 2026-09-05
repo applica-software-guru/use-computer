@@ -3,7 +3,7 @@ title: "Backends"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.3"
+version: "1.4"
 ---
 
 # Backends
@@ -54,9 +54,20 @@ virtualenv only has to be allowed to see them:
 
 ```bash
 sudo apt install python3-gi gir1.2-atspi-2.0
-python3 -m venv --system-site-packages .venv
+python3 -m venv --system-site-packages .venv     # the distro's python3, not another minor version
 .venv/bin/pip install "use-computer-cli[local]"
 ```
+
+**`gi` is a compiled extension**, built for one Python minor version — Ubuntu 22.04 ships it for
+3.10 — so a 3.12 virtualenv with `--system-site-packages` exposes a module it cannot import. That
+is the constraint that actually decides whether any of this works, and it is invisible: both
+packages report as installed.
+
+So the error **looks before it speaks**. `gi` on disk sits next to a
+`_gi.cpython-310-…so` whose name carries the version, and the message says which of the three
+situations this is: nothing installed, installed for this interpreter but not visible, or installed
+for a different one. Advice that tells somebody to install what they already have is worse than no
+advice: they follow it, nothing changes, and they conclude the tool is broken.
 
 `UITreeUnavailableError` says exactly that when the bindings are missing, and does **not** offer an
 extra that would not help — a wrong install line costs every new user their first ten minutes.

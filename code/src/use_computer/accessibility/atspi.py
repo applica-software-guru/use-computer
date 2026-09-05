@@ -8,7 +8,10 @@ error, because the agent reading it is the one that has to get unstuck.
 
 from __future__ import annotations
 
+import sys
 from contextlib import suppress
+from glob import glob
+from pathlib import Path
 from typing import Any
 
 from use_computer.accessibility import roles
@@ -16,14 +19,60 @@ from use_computer.accessibility.base import require
 from use_computer.errors import UITreeUnavailableError
 from use_computer.tree import Box, TreeScope, TreeScopeKind, UINode, WindowInfo
 
+#: Where a distro puts PyGObject. The compiled part carries the Python version it was built for,
+#: which is the fact that decides whether any of the advice below will work.
+DISTRO_PATHS = (
+    "/usr/lib/python3/dist-packages/gi",
+    "/usr/lib/python3*/site-packages/gi",
+    "/usr/lib64/python3*/site-packages/gi",
+)
+
 #: What actually gets AT-SPI working on Linux. Not an extra: PyGObject has no Linux wheel, so
 #: asking pip for it builds from source and fails. The distro has it; a virtualenv only has to be
-#: allowed to see it.
-SYSTEM_HINT = (
+#: allowed to see it -- and has to be the same Python it was built for.
+INSTALL_HINT = (
     "install the distro packages and let the virtualenv see them: "
     "`sudo apt install python3-gi gir1.2-atspi-2.0` then "
     "`python3 -m venv --system-site-packages .venv`"
 )
+
+
+def distro_python() -> str | None:
+    """The Python version the installed PyGObject was built for, or None if none is installed.
+
+    `gi` is a compiled extension and its shared object names the version:
+    ``_gi.cpython-310-x86_64-linux-gnu.so``. Reading it is what turns "install these packages"
+    -- advice that is useless to someone who already has them -- into the reason it is not working.
+    """
+    for pattern in DISTRO_PATHS:
+        for directory in glob(pattern):
+            for shared_object in glob(f"{directory}/_gi.cpython-*.so"):
+                tag = Path(shared_object).name.split(".")[1]  # cpython-310-x86_64-linux-gnu
+                digits = tag.split("-")[1] if "-" in tag else ""
+                if digits.isdigit() and len(digits) >= 2:
+                    return f"{digits[0]}.{digits[1:]}"
+    return None
+
+
+def system_hint() -> str:
+    """Say what is actually wrong here, not what is usually wrong."""
+    built_for = distro_python()
+    running = f"{sys.version_info.major}.{sys.version_info.minor}"
+    if built_for is None:
+        return INSTALL_HINT
+    if built_for == running:
+        # It is installed for this interpreter, so the virtualenv simply cannot see it.
+        return (
+            f"the distro's PyGObject is installed for Python {built_for}, but this environment "
+            "cannot see it. Recreate it with: "
+            f"`python{built_for} -m venv --system-site-packages .venv`"
+        )
+    return (
+        f"the distro's PyGObject is built for Python {built_for}, but this interpreter is "
+        f"{running}, so --system-site-packages would expose a module it cannot import. Create the "
+        f"environment with the matching interpreter: "
+        f"`python{built_for} -m venv --system-site-packages .venv`"
+    )
 
 #: Milliseconds any single AT-SPI call may take. AT-SPI is D-Bus, and every property read is a
 #: round trip into another process: one application that is wedged, or merely slow to answer,
@@ -43,13 +92,13 @@ class AtspiProvider:
     name = "atspi"
 
     def __init__(self) -> None:
-        gi = require("gi", extra=None, system=SYSTEM_HINT)
+        gi = require("gi", extra=None, system=system_hint())
         try:
             gi.require_version("Atspi", "2.0")
             from gi.repository import Atspi  # noqa: PLC0415 - deliberately not at module import
         except (ImportError, ValueError) as exc:
             raise UITreeUnavailableError(
-                "the Atspi typelib is not installed.", system=SYSTEM_HINT
+                "the Atspi typelib is not installed.", system=system_hint()
             ) from exc
         self._atspi = Atspi
         # Older bindings do not expose it; the default timeout then applies.
