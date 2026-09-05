@@ -3,7 +3,7 @@ title: "UI Tree"
 status: synced
 author: ""
 last-modified: "2026-09-05T13:30:00.000Z"
-version: "5.1"
+version: "5.2"
 ---
 
 # UI Tree
@@ -253,6 +253,11 @@ an unpositioned node as off-screen folded away **the largest thing in the window
 So a subtree is summarised only when *nothing in it* is on screen. The closed-menu saving is
 untouched — those items have no positioned descendants either — and the measured window grew by
 three lines.
+
+**A `--depth` the caller asked for does not manufacture one.** At the depth the snapshot stopped
+at, every node looks childless, and marking there would report the caller's own limit as a property
+of the application — the same mistake as reporting `empty` for a `--depth 1`. The boundary level is
+not marked.
 
 **`--full` does not turn this off**, because it is not an abbreviation. There is nothing to expand:
 it is a statement about the platform's coverage, and the one thing `--full` cannot recover.

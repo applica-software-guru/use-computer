@@ -681,7 +681,7 @@ class Session:
 
         # On the raw snapshot, before anything of ours removes a child: a region hidden by our
         # own pruning is not a region the platform failed to describe.
-        root = mark_unexposed(root)
+        root = mark_unexposed(root, depth)
         exposed_children = bool(root.children)
 
         if action.of is not None:

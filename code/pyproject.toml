@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "use-computer-cli"
-version = "0.3.1"
+version = "0.3.2"
 description = "Execute input on a screen for computer-use agents: move, click, drag, scroll, type, key, screenshot."
 readme = "README.md"
 requires-python = ">=3.10"

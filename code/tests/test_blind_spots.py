@@ -7,6 +7,8 @@ because the provider worked and returned plenty.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from tests.fake_provider import node
 from use_computer.render import TREE_LEGEND
 from use_computer.render import tree as render_tree
@@ -155,3 +157,16 @@ def test_the_marker_is_rendered_and_the_legend_explains_it() -> None:
     text = render_tree(mark_unexposed(drawing_window()))
     assert "?unexposed" in TREE_LEGEND
     assert "?unexposed 163,106 1757x885" in text
+
+
+def test_a_depth_limit_does_not_manufacture_a_blind_spot() -> None:
+    # At the depth the snapshot stopped at every node looks childless. Marking there would report
+    # the caller's own limit as a property of the application -- the same mistake as BUG-011.
+    marked = mark_unexposed(drawing_window(), depth_limit=2)
+    assert all(found.unexposed is None for found in _every(marked))
+
+
+def _every(node: UINode) -> Iterator[UINode]:
+    yield node
+    for child in node.children:
+        yield from _every(child)

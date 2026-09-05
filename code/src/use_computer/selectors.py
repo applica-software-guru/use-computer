@@ -182,7 +182,7 @@ def active_window(entries: Sequence[WindowInfo]) -> WindowInfo:
     )
 
 
-def mark_unexposed(node: UINode) -> UINode:
+def mark_unexposed(node: UINode, depth_limit: int | None = None) -> UINode:
     """Say where a node's children do not account for the node's own area.
 
     A tree can be rich, correct, and silent about the only region that matters. Measured in GNOME
@@ -195,13 +195,15 @@ def mark_unexposed(node: UINode) -> UINode:
     served worst, because an agent could not tell it from a window that exposes everything.
 
     This runs on the **raw** snapshot, before pruning: a region hidden by our own pruning is not a
-    region the platform failed to describe.
+    region the platform failed to describe. For the same reason ``depth_limit`` is honoured -- at
+    the depth the snapshot stopped at, every node looks childless, and marking there would report
+    the caller's own limit as a property of the application.
     """
-    marked, _ = _mark(node)
+    marked, _ = _mark(node, depth_limit)
     return marked
 
 
-def _mark(node: UINode) -> tuple[UINode, bool]:
+def _mark(node: UINode, depth_limit: int | None, depth: int = 0) -> tuple[UINode, bool]:
     """Mark this subtree, and say whether anything in it carries a mark.
 
     Only the **innermost** node is marked. A canvas nested three panels deep would otherwise be
@@ -211,11 +213,14 @@ def _mark(node: UINode) -> tuple[UINode, bool]:
     children = []
     deeper = False
     for child in node.children:
-        marked, found = _mark(child)
+        marked, found = _mark(child, depth_limit, depth + 1)
         children.append(marked)
         deeper = deeper or found
     kids = tuple(children)
-    region = None if deeper else _blind_spot(node, kids)
+    # A node whose children were cut by the caller's own `--depth` has no evidence either way:
+    # saying the platform describes nothing there would be BUG-011 in a second place.
+    truncated_here = depth_limit is not None and depth >= depth_limit - 1
+    region = None if deeper or truncated_here else _blind_spot(node, kids)
     return (
         node.model_copy(update={"children": kids, "unexposed": region}),
         deeper or region is not None,
