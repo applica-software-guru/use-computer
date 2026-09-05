@@ -2,8 +2,8 @@
 title: "Tech Stack"
 status: synced
 author: ""
-last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.5"
+last-modified: "2026-09-05T13:15:00.000Z"
+version: "1.6"
 ---
 
 # Tech Stack
@@ -111,6 +111,13 @@ untested code is the failure the whole gate exists to prevent, then builds, then
    configured the run still builds and checks the artifacts, and says why it skipped the upload;
 5. prefers **Trusted Publishing** over a long-lived token, with `id-token: write` for PEP 740
    attestations.
+
+**A diagnostic step cannot fail the job.** CI prints the resolved dependency versions so a later
+failure can be read against them, and for days it did nothing else: `rich` dropped its
+module-level `__version__`, the step raised, and every leg went red *before pytest ran*. Versions
+come from `importlib.metadata.version(...)` — packaging metadata rather than a convention a library
+may drop — and the step swallows its own exit code. A red tick that has been red for days stops
+being read, which is the real cost.
 
 `ruff` runs with a **cold cache** in CI. A stale cache once reported a clean tree while a real
 lint error sat in the file it had already seen; CI is always a machine that has never linted the

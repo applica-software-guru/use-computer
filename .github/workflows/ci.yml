@@ -65,7 +65,7 @@ jobs:
 
       - name: Report the resolved versions
         run: |
-          uv run --no-sync python -c "import typer, rich, pydantic; print('typer', typer.__version__, '| rich', rich.__version__, '| pydantic', pydantic.VERSION)"
+          uv run --no-sync python -c "from importlib.metadata import version; print(' | '.join(f'{name} {version(name)}' for name in ('typer', 'rich', 'pydantic')))" || true
 
       # Cold cache on purpose: a warm one once reported a clean tree while a
       # real error sat in a file it had already seen.
