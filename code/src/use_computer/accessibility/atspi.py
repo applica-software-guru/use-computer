@@ -16,11 +16,7 @@ from typing import Any
 
 from use_computer.accessibility import roles
 from use_computer.accessibility.base import require
-from use_computer.errors import (
-    AmbiguousWindowError,
-    UITreeUnavailableError,
-    UseComputerError,
-)
+from use_computer.errors import UITreeUnavailableError, UseComputerError
 from use_computer.tree import Box, TreeScope, TreeScopeKind, UINode, WindowInfo
 
 #: Where a distro puts PyGObject. The compiled part carries the Python version it was built for,
@@ -195,8 +191,8 @@ class AtspiProvider:
         if scope.kind is TreeScopeKind.ALL:
             return desktop
 
-        if scope.kind is TreeScopeKind.TITLE and scope.value:
-            return self._window_named(scope.value)
+        if scope.kind is TreeScopeKind.ID and scope.value:
+            return self._by_path(desktop, scope.value)
 
         for app in self._children(desktop):
             # One unresponsive application must not cost the whole snapshot. Skipping it loses
@@ -221,26 +217,16 @@ class AtspiProvider:
             )
         raise UITreeUnavailableError(f"no window matches {scope.value!r}.")
 
-    def _window_named(self, wanted: str) -> Any:
-        """Exactly one window, or an error carrying the ones that matched.
-
-        An id is exact and a title is a substring, so a value that is one is never tested as the
-        other. This matters more than it looks: a terminal puts the running command in its own
-        title, so the terminal executing `--window "X"` contains X and matches it. Picking the
-        first match would return the window the user is looking at rather than the one they named.
-        """
-        pairs = self._window_pairs()
-        exact = [pair for pair in pairs if pair[0].id == wanted]
-        if exact:
-            return exact[0][1]
-
-        folded = wanted.casefold()
-        matches = [pair for pair in pairs if folded in (pair[0].title or "").casefold()]
-        if not matches:
-            raise UITreeUnavailableError(f"no window matches {wanted!r}.")
-        if len(matches) > 1:
-            raise AmbiguousWindowError(wanted, [info for info, _ in matches])
-        return matches[0][1]
+    def _by_path(self, desktop: Any, path: str) -> Any:
+        """The window an id names. Ids are index paths, so this is a walk."""
+        node = desktop
+        for step in path.split("/")[1:]:
+            children = self._children(node)
+            index = int(step) if step.isdigit() else -1
+            if not 0 <= index < len(children):
+                raise UITreeUnavailableError(f"no window at {path!r}.")
+            node = children[index]
+        return node
 
     def _children(self, obj: Any) -> list[Any]:
         try:

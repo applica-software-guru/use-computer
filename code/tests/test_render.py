@@ -53,3 +53,15 @@ def test_windows_render_with_a_marker_on_the_active_one() -> None:
     assert lines[0] == render.WINDOWS_LEGEND
     assert lines[1] == '0/1 Posta window "Conferma" 4711 0,0 1920x1038 *'
     assert lines[2] == "0/2 - window - 0,0 1920x1038"  # no app, no title, no pid, not active
+
+
+def test_a_crop_is_clipped_to_the_screen() -> None:
+    # A node's box can extend past the edge. That must produce a smaller picture, never an error.
+    from tests.fake_backend import png
+    from use_computer.compare import Screenshot, crop
+
+    shot = Screenshot(data=png(100, 50), width=100, height=50)
+    cropped = crop(shot, (80, 40, 60, 40), "0/1")
+    assert (cropped.width, cropped.height) == (20, 10)
+    assert cropped.box == (80, 40, 20, 10)
+    assert cropped.of == "0/1"

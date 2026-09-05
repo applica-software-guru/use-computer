@@ -3,7 +3,7 @@ title: "Vision"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.1"
+version: "1.2"
 ---
 
 # Vision
@@ -39,8 +39,10 @@ whole ladder stands on and is not going anywhere; it is simply no longer the onl
 - **use-computer** performs the action, and answers *where* itself whenever the operating system
   will say so.
 
-Both are driven by another AI agent through a CLI that emits JSON on stdout and diagnostics on
-stderr, with a Python API underneath. Neither tool decides what to do; they are precise
+Both are driven by another AI agent through a CLI that writes text on stdout and diagnostics on
+stderr, with a Python API underneath. Text because the consumer is a model: the same answers cost
+a third of the tokens as JSON, and the envelope alone was 177 of them before any content.
+`--format json` is one flag away for a program. Neither tool decides what to do; they are precise
 instruments for an agent that does.
 
 ## Three problems define the design

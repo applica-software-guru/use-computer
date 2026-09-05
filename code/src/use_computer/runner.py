@@ -39,7 +39,7 @@ from use_computer.actions import (
     with_default_space,
 )
 from use_computer.backends import Backend, create_backend
-from use_computer.compare import ChangeReport, Screenshot, compare
+from use_computer.compare import ChangeReport, Screenshot, compare, crop
 from use_computer.config import (
     BackendProfile,
     ResolvedConfig,
@@ -53,6 +53,7 @@ from use_computer.errors import (
     ActionNotSupportedError,
     AmbiguousNodeError,
     AmbiguousWindowError,
+    CoordinateSpaceError,
     NodeNotFoundError,
     PermissionDeniedError,
     UITreeUnavailableError,
@@ -66,6 +67,7 @@ from use_computer.selectors import (
     notable_states,
     prune,
     resolve_one,
+    resolve_window,
     subtree,
     summarise_offscreen,
 )
@@ -75,6 +77,8 @@ from use_computer.tree import (
     OutputFormat,
     TreeReason,
     TreeResult,
+    TreeScope,
+    TreeScopeKind,
     UINode,
     Via,
     WindowInfo,
@@ -499,13 +503,26 @@ class Session:
                 "platform API.",
             )
 
+    def _scope(self, scope: TreeScope) -> TreeScope:
+        """Turn a title into the id of exactly one window, or refuse.
+
+        Done here rather than in each provider: it is policy, three platforms would drift on it,
+        and two of them cannot be exercised on any one machine.
+        """
+        if scope.kind is not TreeScopeKind.TITLE or not scope.value:
+            return scope
+        found = resolve_window(self._provider().windows(), scope.value)
+        return TreeScope(kind=TreeScopeKind.ID, value=found.id)
+
     def _resolve_node(self, selector: NodeSelector) -> UINode:
         """One node, from a tree read right now.
 
         Resolution runs against the *unpruned* tree: pruning is a reading convenience, and a
         selector must still be able to name something pruning would have dropped.
         """
-        root = self._provider().snapshot(selector.window, self._settings.tree_depth)
+        root = self._provider().snapshot(
+            self._scope(selector.window), self._settings.tree_depth
+        )
         try:
             return resolve_one(root, selector)
         except NodeNotFoundError as exc:
@@ -521,7 +538,7 @@ class Session:
         fallback = action.fallback if action.fallback is not None else settings.tree_fallback
 
         try:
-            root = self._provider().snapshot(action.window, depth)
+            root = self._provider().snapshot(self._scope(action.window), depth)
         except PermissionDeniedError:
             return self._no_tree(TreeReason.DENIED, fallback)
         except UITreeUnavailableError:
@@ -597,7 +614,48 @@ class Session:
 
     def _capture(self, action: ScreenshotAction) -> Screenshot:
         shot = self._backend.screenshot()
-        return shot.write_to(action.out or self._screenshot_path("screenshot"))
+        label = "screenshot"
+        if action.of is not None:
+            shot = self._crop_to_node(shot, action.of, action.window, action.pad)
+            label = "node"
+        return shot.write_to(action.out or self._screenshot_path(label))
+
+    def _crop_to_node(
+        self, shot: Screenshot, node_id: str, scope: TreeScope, pad: int
+    ) -> Screenshot:
+        """A picture of one element rather than of the screen.
+
+        The tree already knows exactly where; only *what* is missing. Cropping turns a rung-three
+        answer from two million pixels into a few thousand, with the thing being asked about
+        filling the frame instead of being a fraction of a percent of it.
+        """
+        root = self._provider().snapshot(self._scope(scope), self._settings.tree_depth)
+        node = subtree(root, node_id)
+        if node is None:
+            raise NodeNotFoundError(f"id={node_id}")
+        if not node.box.positioned:
+            # Same refusal as a coordinate click on such a node, and for the same reason: the box
+            # is arithmetic, not a place.
+            raise ActionNotSupportedError(
+                "screenshot --of", node.describe(), node.actions,
+                reason="It has no on-screen position, so there is nothing to crop to.",
+            )
+
+        # The box is in actuation units and the crop is in screenshot pixels. This is the one
+        # place a box crosses that boundary, so it is the one place the scale must be applied
+        # rather than assumed: unscaled on a HiDPI display it is off by two and looks plausible.
+        scale = self._screen.scale
+        if scale is None:
+            raise CoordinateSpaceError(
+                "the screenshot scale is unknown, so a node's box cannot be turned into a crop. "
+                "Set `scale` in the profile, or take a full screenshot."
+            )
+        box = node.box
+        left = round(box.x * scale) - pad
+        top = round(box.y * scale) - pad
+        width = round(box.width * scale) + pad * 2
+        height = round(box.height * scale) + pad * 2
+        return crop(shot, (left, top, width, height), node_id)
 
     def _screenshot_path(self, label: str) -> Path:
         """A name that sorts and does not collide."""

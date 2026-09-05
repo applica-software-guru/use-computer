@@ -3,7 +3,7 @@ title: "Interfaces"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "2.3"
+version: "3.0"
 ---
 
 # Interfaces
@@ -24,7 +24,7 @@ use-computer drag        --from-x INT --from-y INT --to-x INT --to-y INT
 use-computer scroll      --amount INT [--direction up|down|left|right] [--x INT --y INT]
 use-computer type        --text STR [--rate FLOAT]
 use-computer key         COMBO
-use-computer screenshot  [--out PATH]
+use-computer screenshot  [--out PATH] [--of NODE_ID] [--pad INT] [--window SCOPE]
 ```
 
 ### Element commands
@@ -71,12 +71,12 @@ use-computer skill  install|update|remove|status
 ### Global options
 
 `--use PROFILE`, `--dry-run`, `--verify`, `--space screenshot|actuation`, `--delay SECONDS`,
-`-v/-vv`, `--human`, `--version`.
+`-v/-vv`, `--format text|json`, `--version`.
 
-`--human` prints for a reader: aligned columns for `windows`, the bare rendering for `tree`, and
-one line per action for everything else — the matched node, the rung taken, the duration. Errors
-stay on stderr and stdout gets nothing. Exit codes are unchanged: it alters what is written, never
-what is meant. **Every invocation without it still prints exactly one JSON object.**
+Text is aligned columns for `windows`, the rendering for `tree`, and one line per action for
+everything else — the matched node, the rung taken, the duration. A `screenshot` prints its path,
+because the path is the answer. Errors are on stderr and stdout stays empty for the action that
+failed.
 
 `--verify` writes the after-screenshot to a file and reports its path in `screenshot`, so an agent
 that verified an action does not then have to ask for the screen it already paid to capture.
@@ -84,9 +84,17 @@ A screenshot is **never** returned as bytes; there is no base64 anywhere in this
 
 ### Output contract
 
-- **stdout**: exactly one JSON object per run, written with `json.dumps`.
-- **stderr**: every diagnostic, log line and human-readable error.
-- **exit codes**: `0` success, `1` failure, `2` bad usage.
+- **stdout**: text. One line per action, or the read that was asked for.
+- **stderr**: every diagnostic, log line and error.
+- **exit codes**: `0` success, `1` failure, `2` bad usage — unchanged, and the primary signal.
+
+`--format json` returns the envelope below instead, written with `json.dumps`. It is a global flag
+on every command that performs actions or reads the screen, and it is never inferred from
+`isatty()`.
+
+Measured in tokens on this tool: `screenshot` is 243 as JSON and 4 as text; a `click` on an element
+is 4,238 against 21; the envelope alone, contents removed, is 177 before anything is said. The
+consumer of this CLI is a model, and a Python API exists underneath for programs.
 
 ### Run JSON
 

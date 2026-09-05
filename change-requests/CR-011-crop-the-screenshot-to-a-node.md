@@ -1,6 +1,6 @@
 ---
 title: "Crop the screenshot to a node"
-status: pending
+status: applied
 author: "bruno.fortunato@applica.guru"
 created-at: "2026-09-05T00:00:00.000Z"
 ---

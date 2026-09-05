@@ -40,6 +40,10 @@ class Screenshot(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     path: Path | None = None
+    of: str | None = Field(default=None, description="The node id this was cropped to.")
+    box: tuple[int, int, int, int] | None = Field(
+        default=None, description="The crop, in screenshot pixels."
+    )
     data: bytes | None = Field(default=None, repr=False, exclude=True)
     width: int
     height: int
@@ -78,6 +82,35 @@ class ChangeReport(BaseModel):
     threshold: float
     bbox: tuple[int, int, int, int] | None = Field(
         default=None, description="Bounding box of the change, in screenshot pixels."
+    )
+
+
+def crop(
+    shot: Screenshot, box: tuple[int, int, int, int], node_id: str | None = None
+) -> Screenshot:
+    """A picture of one element, in screenshot pixels, clipped to the screen.
+
+    A node's box can extend past the edge -- a negative origin or an over-wide width must produce
+    a smaller picture, never an error.
+    """
+    left, top, width, height = box
+    right = min(left + width, shot.width)
+    bottom = min(top + height, shot.height)
+    left = max(left, 0)
+    top = max(top, 0)
+    if right <= left or bottom <= top:
+        raise ValueError(f"{node_id or 'that box'} is not on the screen")
+
+    image = Image.open(io.BytesIO(shot.data or b"")).crop((left, top, right, bottom))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return Screenshot(
+        data=buffer.getvalue(),
+        width=right - left,
+        height=bottom - top,
+        space=shot.space,
+        of=node_id,
+        box=(left, top, right - left, bottom - top),
     )
 
 

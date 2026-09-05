@@ -163,6 +163,8 @@ class TreeScopeKind(str, Enum):
     ALL = "all"
     TITLE = "title"
     PID = "pid"
+    ID = "id"
+    """A specific window, by the id `windows` reported. What a title resolves to."""
 
 
 class WindowsResult(BaseModel):
@@ -217,7 +219,9 @@ class TreeResult(BaseModel):
     truncated: bool = False
     truncated_ids: tuple[str, ...] = ()
     text: str | None = Field(
-        default=None, description="The rendering, legend first. Absent under --format json."
+        default=None,
+        description="The rendering, legend first. Absent under --format json, which carries "
+        "objects instead: asking for the envelope is asking to parse.",
     )
     reason: TreeReason | None = None
     screenshot: Screenshot | None = None

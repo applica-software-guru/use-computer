@@ -3,7 +3,7 @@ title: "Architecture"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.4"
+version: "1.5"
 ---
 
 # Architecture
@@ -56,11 +56,14 @@ all. It is selected by the **running platform**, never by configuration.
 `push button`, UIA's `Button` and AX's `AXButton` all become `button`, and the canonical action
 names map back onto `Action.do_action`, control patterns and `AXPress` respectively.
 
-Pruning, the node budget, the notable-state filter, the off-screen summary and selector matching
-all live in `selectors.py` and operate on an already built tree, so they are pure functions over
+Pruning, the node budget, the notable-state filter, the off-screen summary, **matching a window
+by title** and selector matching all live in `selectors.py` and operate on an already built tree, so they are pure functions over
 `UINode` and test without a desktop. Everything that shapes what the caller sees belongs here and
 not in a provider: three platforms would otherwise abbreviate three different ways, and each
-decision would need a desktop to test. That matters: no
+decision would need a desktop to test. Window matching drifted into `atspi.py` once and had to be
+hoisted back out — the two providers that cannot be exercised on any one machine had silently
+missed both the ambiguity refusal and the application name. **A provider only ever receives a
+scope naming a window by id or pid**; a title is resolved above it. That matters: no
 CI runner has a session bus, a logged-in desktop or an Accessibility grant, so the platform
 providers are unreachable there by construction and everything worth testing has to sit above
 them.

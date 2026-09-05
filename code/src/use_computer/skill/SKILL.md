@@ -2,7 +2,7 @@
 name: use-computer
 description: Read and act on a GUI — the accessibility tree of what is on screen (roles, names, clickable boxes), then click, focus, toggle, expand, select, set a value, type, press keys, drag, scroll, screenshot. Locally or over VNC. Ask the tree first and use ui-locator's pixel coordinates only when the tree cannot see the element.
 x-skill-id: use-computer
-x-skill-version: "2"
+x-skill-version: "3"
 ---
 
 # use-computer
@@ -33,11 +33,12 @@ that still resolves.
 
 ## Contract
 
-- **stdout** is one JSON object per run. Parse it. (There is a `--human` flag; it prints prose
-  instead of JSON and exists for a person at a terminal. **Never pass it** — it would break your
-  own parsing.)
-- **stderr** is diagnostics. Read it only when debugging.
-- **exit codes**: `0` success, `1` failure, `2` bad usage.
+- **stdout is text.** One line per action, or the read you asked for. Read it; do not parse it.
+- **stderr** is diagnostics and errors. Read it when something fails.
+- **exit codes**: `0` success, `1` failure, `2` bad usage. This is the signal to branch on.
+
+`--format json` returns a JSON envelope instead. You almost never want it: the same answers cost
+three times the tokens, and 177 of those go on the envelope before anything is said.
 
 Always pass `--use <profile>` unless a default profile is configured.
 
@@ -57,16 +58,28 @@ and read `screen` from the result; do not compute a factor and retry with differ
 use-computer windows --use laptop
 ```
 
-The `windows` field of the result carries a rendering, one line per window:
-
 ```
-# id role "title" pid x,y wxh *active
-0/29/0 window "Conferma" 4711 0,0 1920x1038 *
-0/33/0 window "Posta" 5210 331,130 1152x784
+id      app              role    title                  pid     box               active
+0/29/0  TelegramDesktop  panel   Roberto Conterosito    15872   331,130 1152x784
+0/34/0  Codex            window  ChatGPT                144775  0,0 1920x1038     *
 ```
 
-Use the `title` as `--window` for everything that follows. The `*` marks the one `--window focused`
-resolves to. A `-` where the pid should be means the platform did not report one.
+Use the `title` as `--window` for everything that follows, and **`app` to tell windows apart** — a
+title alone will not tell you which one is Telegram. The `*` marks the one `--window focused`
+resolves to.
+
+**`--window` refuses to guess.** A title matches as a substring, so if two windows match you get
+the candidates and no action:
+
+```
+AmbiguousWindowError: 2 windows match 'ChatGPT'; use a longer title, or the window id from `windows`
+  0/34/0 Codex 'ChatGPT' at (0, 0)
+  0/34/1 Codex 'ChatGPT' at (1469, -86)
+```
+
+This is not rare: **a terminal puts the running command in its own title**, so a terminal running
+`--window "X"` matches X too. When it happens use the **window id** from the first column —
+`--window 0/34/0` — matched exactly, and tried before any title.
 
 ## Reading the tree
 
@@ -120,6 +133,24 @@ check for these before concluding anything is missing:
   read its contents; a terminal or an editor would otherwise send you its entire buffer.
 
 `--full` turns all three off at once.
+
+## When the tree cannot name something
+
+Some applications paint their own text: Telegram's "Write a message…" is pixels, not a string, and
+no amount of reading the tree finds it. But the tree knows exactly **where** the element is, so do
+not photograph the whole screen to learn **what** it is:
+
+```bash
+use-computer screenshot --window "Chat" --of 0/1/0/0/0/13/0 --pad 8
+→ /home/you/.local/share/use-computer/screenshots/…-node.png 653x28 of 0/1/0/0/0/13/0
+```
+
+18,284 pixels instead of 2,073,600, with the thing you are asking about filling the frame. Then act
+on the same id. The loop is **`tree` to locate, `screenshot --of` to look, `click --id` to act**.
+
+Two unnamed fields are also told apart by where they sit — a message box is wide and at the bottom,
+a search box narrow and at the top — and by focus: click one, re-read the tree, see which now says
+`!focused`.
 - **`root: null`** with a `reason` means there is no tree here: `unavailable` (no provider, or a
   vnc profile), `denied` (permission), `empty` (the app exposes nothing). A `screenshot` path comes
   back with it — that is your cue to switch to ui-locator.
@@ -167,7 +198,7 @@ use-computer drag --from-x 10 --from-y 20 --to-x 300 --to-y 400 --use staging
 use-computer scroll --amount 3 --direction down --use staging
 use-computer type --text "hello world" --use staging
 use-computer key ctrl+s --use staging
-use-computer screenshot --use staging              # writes a file, returns its path
+use-computer screenshot --use staging              # writes a file, prints its path
 ```
 
 `type` sends literal text. `ctrl+a` given to `type` types seven characters — use `key` for

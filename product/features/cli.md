@@ -3,7 +3,7 @@ title: "CLI"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.5"
+version: "2.0"
 ---
 
 # CLI
@@ -32,16 +32,37 @@ use-computer skill install --scope project
 
 ## Output contract
 
-- **stdout is JSON and nothing else.** One object per run.
-- **stderr carries all diagnostics** — logs, warnings, progress, human-readable errors.
-- **Exit codes**: `0` success, `1` failure, `2` bad usage.
+- **stdout is text.** One line per action, or the read that was asked for.
+- **stderr carries all diagnostics** — logs, warnings, progress, errors.
+- **Exit codes**: `0` success, `1` failure, `2` bad usage. Unchanged, and the primary signal.
 
-An agent can therefore pipe stdout into a JSON parser unconditionally.
+`--format json` returns the envelope instead, for anyone piping into a parser.
 
-**`--human` is the only exception, and it must be asked for.** With it, stdout carries aligned text
-and no JSON; without it, every invocation prints exactly one JSON object whatever happens. It is
-never inferred from `isatty()`: agents run commands under a pty often enough that switching format
-on them would fail as a parse error far from its cause, on the caller least able to diagnose it.
+### Why text, and not JSON
+
+Measured on this tool, in tokens:
+
+| | JSON | Text |
+| --- | --- | --- |
+| `screenshot` | **243** | **4** |
+| `click --role button --name "Invia"` | **4,238** | **21** |
+| `windows` | 363 | 128 |
+| The envelope alone, contents removed | **177** | — |
+
+JSON's cost is not verbosity: `{`, `"`, `:`, `,` and every repeated key are each their own token,
+so `"role": "button"` spends five to say one thing. And 177 of those are spent before any content —
+on `profile` and `backend` (constant for a session), `screen` (five numbers nobody reads per
+action), `ok` and `failed_index` (which the exit code already carries), and the action echoed back
+to the caller who just sent it.
+
+The decisive argument is one this project already made: [vision.md](../vision.md) says these tools
+are "driven by another AI agent through a CLI", and a **Python API** exists underneath for
+programs. The CLI's consumer is a model. It was optimised for a machine parser that has somewhere
+better to be.
+
+`--format` is **never inferred from `isatty()`**. Agents run commands under a pty often enough that
+switching format on them would surface as a parse error far from its cause, on the caller least
+able to diagnose it.
 
 ## Global flags
 

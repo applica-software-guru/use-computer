@@ -3,7 +3,7 @@ title: "Actions"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.2"
+version: "1.3"
 ---
 
 # Actions
@@ -84,6 +84,31 @@ than having a megabyte of base64 poured into its context by a batch it did not t
 
 `screenshot --out PATH` writes there. Without `--out` it writes into the configured screenshot
 directory under a name that sorts and does not collide.
+
+### `screenshot --of NODE_ID` crops to one element
+
+The tree knows exactly *where* something is; sometimes only *what* is missing — a placeholder an
+application paints rather than exposes, say. Answering that with a picture of the whole screen is
+the wrong price:
+
+```bash
+use-computer screenshot --window "Chat" --of 0/1/0/0/0/13/0 --pad 8
+→ …/20260905T092204.279Z-node.png 653x28 of 0/1/0/0/0/13/0
+```
+
+**18,284 pixels instead of 2,073,600**, with the thing being asked about filling the frame rather
+than occupying 0.9% of it. `--pad N` grows the crop each side, because a control's box often
+excludes the label beside it. An id is scope-relative, so `--of` takes `--window` too.
+
+## What an action prints
+
+One line, on stdout:
+
+```
+click button 'Invia' at 0/2/1/3 via the platform API — 12 ms
+```
+
+A `screenshot` prints its path and nothing else, because the path is the answer.
 
 ## Results
 

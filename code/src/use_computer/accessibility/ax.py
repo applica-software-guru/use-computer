@@ -51,6 +51,7 @@ class AxProvider:
         if app is None:
             return []
         focused = self._attr(app, "AXFocusedWindow")
+        app_name = self._attr(app, "AXTitle")
         found: list[WindowInfo] = []
         for index, window in enumerate(self._attr(app, "AXWindows") or []):
             title = self._attr(window, "AXTitle")
@@ -59,6 +60,7 @@ class AxProvider:
                     id=f"0/{index}",
                     title=str(title) if title else None,
                     role=roles.ax_role(str(self._attr(window, "AXRole") or "")),
+                    app=str(app_name) if app_name else None,
                     pid=None,
                     box=self._box(window),
                     active=bool(focused is not None and window == focused),
@@ -88,10 +90,10 @@ class AxProvider:
         app = self._attr(system, "AXFocusedApplication")
         if scope.kind is TreeScopeKind.ALL:
             return app or system
-        if scope.kind is TreeScopeKind.TITLE and scope.value and app is not None:
-            for window in self._attr(app, "AXWindows") or []:
-                title = self._attr(window, "AXTitle") or ""
-                if scope.value.casefold() in str(title).casefold():
+        # A title is resolved to an id above the Protocol, so a provider only ever sees an id.
+        if scope.kind is TreeScopeKind.ID and scope.value and app is not None:
+            for index, window in enumerate(self._attr(app, "AXWindows") or []):
+                if scope.value == f"0/{index}":
                     return window
         focused = self._attr(app, "AXFocusedWindow") if app is not None else None
         return focused or app or system

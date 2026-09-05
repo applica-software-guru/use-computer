@@ -55,7 +55,7 @@ unconditionally, and it is not worth trading. The rendering is a string field:
 {"tree": {"text": "# id role …\n0 window …", "node_count": 24, "truncated": false}}
 ```
 
-Escaping the newlines costs 17% over raw text and still lands at **667 tokens against 1,707 — 39%**.
+That rendering is now what stdout carries directly (CR-010); `--format json` returns objects.
 Almost all of the saving survives the contract, so there is no case for breaking it.
 
 `root` is absent by default and returned by `--format json`, for a caller that wants objects. The

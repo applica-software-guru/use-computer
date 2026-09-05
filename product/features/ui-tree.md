@@ -3,7 +3,7 @@ title: "UI Tree"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "3.2"
+version: "4.0"
 ---
 
 # UI Tree
@@ -46,10 +46,8 @@ it. Every field is still there; only the syntax naming them is gone.
 **Indentation stays** — it duplicates what the id already encodes, and it measured *free*: 555
 tokens either way, because runs of spaces collapse into a token that would have been spent anyway.
 
-**It travels inside the JSON.** `stdout is JSON and nothing else` is what lets an agent pipe this
-into a parser without knowing which flags produced it, and escaping the newlines costs 112 tokens
-of the 1,040 saved. The rendering is a string field; `--format json` returns `root` as objects
-instead, and the Python API has had objects all along.
+**This is what stdout carries.** `--format json` returns the envelope with `root` as objects
+instead, for a caller that parses; the Python API has had objects all along.
 
 `truncated`, `node_count` and `reason` stay structured. They are read by code, they are three
 values rather than thousands, and burying them in prose would be the same mistake backwards.
@@ -188,11 +186,13 @@ is the whole point of operating an element through the platform.
 
 Measured: 73 nodes and 10,948 bytes become **24 nodes and 3,777 bytes**.
 
-## Reading it yourself
+## Looking at what the tree cannot name
 
-`--human` prints the rendering bare, with no envelope around it — which is the point: that text was
-always the readable form, it was just addressed to somebody else. `windows --human` prints aligned
-columns instead of the packed line.
+Some things are pixels: an application that paints its own placeholder exposes no string for it.
+The tree still knows exactly where the element is, so the picture does not have to be of the whole
+screen — `screenshot --of <id>` crops to it. The loop is: **locate with `tree`, look with
+`screenshot --of`, act with `click --id`**, and `--id` is fingerprint-checked, so the node that was
+looked at is the node that gets clicked.
 
 ## `--full` is the escape hatch
 

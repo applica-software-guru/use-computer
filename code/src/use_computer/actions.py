@@ -186,8 +186,28 @@ class KeyAction(BaseAction):
 
 class ScreenshotAction(BaseAction):
     action: Literal["screenshot"] = "screenshot"
+
+    @field_validator("window", mode="before")
+    @classmethod
+    def _parse_scope(cls, value: Any) -> Any:
+        return TreeScope.parse(value) if isinstance(value, str) else value
+
     out: Path | None = Field(
         default=None, description="Where to write it. None means the screenshot directory."
+    )
+    of: str | None = Field(
+        default=None,
+        description="Crop to this node's box. The tree knows where; only what is missing.",
+    )
+    window: TreeScope = Field(
+        default_factory=TreeScope,
+        description="Which tree `of` is an id in. An id means nothing without its scope.",
+    )
+    pad: int = Field(
+        default=0,
+        ge=0,
+        description="Grow the crop by this many pixels each side; a control's box often "
+        "excludes the label beside it.",
     )
 
 

@@ -47,13 +47,13 @@ def invoke(runner: CliRunner, *args: str) -> CliResult:
     return runner.invoke(app, list(args), catch_exceptions=False)
 
 
-def test_stdout_is_json_and_nothing_else(
+def test_the_envelope_is_json_and_nothing_else(
     runner: CliRunner,
     write_config: WriteConfig,
     backend: FakeBackend,
 ) -> None:
     write_config(CONFIG)
-    result = invoke(runner, "click", "--x", "120", "--y", "340")
+    result = invoke(runner, "click", "--x", "120", "--y", "340", "--format", "json")
     assert result.exit_code == EXIT_OK
     payload = json.loads(result.stdout)
     assert payload["ok"] is True
@@ -69,7 +69,7 @@ def test_a_failed_action_exits_one(
     monkeypatch.setattr(
         "use_computer.runner.create_backend", lambda profile: FakeBackend(fail_on="click")
     )
-    result = invoke(runner, "click", "--x", "1", "--y", "1")
+    result = invoke(runner, "click", "--x", "1", "--y", "1", "--format", "json")
     assert result.exit_code == EXIT_FAILURE
     assert json.loads(result.stdout)["ok"] is False
 
@@ -107,7 +107,7 @@ def test_a_batch_runs_over_one_backend(
         ),
         encoding="utf-8",
     )
-    result = invoke(runner, "batch", str(actions))
+    result = invoke(runner, "batch", str(actions), "--format", "json")
     assert result.exit_code == EXIT_OK
     assert [name for name, _ in backend.calls] == ["click", "type_text", "key"]
     assert len(json.loads(result.stdout)["results"]) == 3
@@ -141,7 +141,7 @@ def test_dry_run_performs_nothing(
     backend: FakeBackend,
 ) -> None:
     write_config(CONFIG)
-    result = invoke(runner, "click", "--x", "1", "--y", "1", "--dry-run")
+    result = invoke(runner, "click", "--x", "1", "--y", "1", "--dry-run", "--format", "json")
     assert result.exit_code == EXIT_OK
     assert backend.calls == []
     assert json.loads(result.stdout)["results"][0]["performed"] is False
@@ -185,7 +185,7 @@ def test_json_output_survives_a_long_string(
     """
     write_config(CONFIG)
     text = "x" * 5000
-    result = invoke(runner, "type", "--text", text)
+    result = invoke(runner, "type", "--text", text, "--format", "json")
     payload = json.loads(result.stdout)
     assert payload["results"][0]["action"]["text"] == text
 
@@ -256,18 +256,16 @@ def provider(monkeypatch: pytest.MonkeyPatch) -> object:
     return instance
 
 
-def test_tree_renders_inside_the_single_json_object(
+def test_the_envelope_carries_objects_not_a_rendering(
     runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
 ) -> None:
+    # Asking for the envelope is asking to parse, so it carries the structure and not the prose.
     write_config(CONFIG)
-    result = invoke(runner, "tree")
+    result = invoke(runner, "tree", "--format", "json")
     assert result.exit_code == EXIT_OK
-    # stdout is still exactly one JSON object -- that is the whole reason the rendering is a
-    # field rather than a replacement for it.
     tree = json.loads(result.stdout)["results"][0]["tree"]
-    assert tree["root"] is None
-    assert tree["text"].startswith('# id role "name"')
-    assert '0 dialog "Conferma"' in tree["text"]
+    assert tree["text"] is None
+    assert tree["root"]["role"] == "dialog"
     assert tree["reason"] is None
 
 
@@ -286,18 +284,18 @@ def test_windows_renders_too(
     runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
 ) -> None:
     write_config(CONFIG)
-    result = invoke(runner, "windows")
+    result = invoke(runner, "windows", "--format", "json")
     assert result.exit_code == EXIT_OK
     payload = json.loads(result.stdout)["results"][0]["windows"]
-    assert payload["text"].startswith('# id app role "title"')
-    assert payload["windows"] == []
+    assert payload["text"] is None
+    assert [w["title"] for w in payload["windows"]] == ["Conferma"]
 
 
 def test_clicking_by_name_reports_the_rung_it_took(
     runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
 ) -> None:
     write_config(CONFIG)
-    result = invoke(runner, "click", "--role", "button", "--name", "Invia")
+    result = invoke(runner, "click", "--role", "button", "--name", "Invia", "--format", "json")
     assert result.exit_code == EXIT_OK
     item = json.loads(result.stdout)["results"][0]
     assert item["via"] == "action"
@@ -415,14 +413,14 @@ def test_a_candidate_name_keeps_its_brackets(
     assert "[draft] Send" in strip_ansi(result.stderr)
 
 
-# --- a view for the person running it -------------------------------------------------------------
+# --- text is the output, JSON is the thing you ask for --------------------------------------------
 
 
-def test_human_prints_columns_and_no_json(
+def test_windows_prints_columns_and_no_json(
     runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
 ) -> None:
     write_config(CONFIG)
-    result = invoke(runner, "windows", "--human")
+    result = invoke(runner, "windows")
     assert result.exit_code == EXIT_OK
     out = strip_ansi(result.stdout)
     assert out.startswith("id")  # the header, not a brace
@@ -431,22 +429,22 @@ def test_human_prints_columns_and_no_json(
         json.loads(out)
 
 
-def test_human_prints_the_tree_bare(
+def test_tree_prints_bare(
     runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
 ) -> None:
     write_config(CONFIG)
-    result = invoke(runner, "tree", "--human")
+    result = invoke(runner, "tree")
     assert result.exit_code == EXIT_OK
     out = strip_ansi(result.stdout)
     assert out.startswith('# id role "name"')
     assert '"Invia"' in out
 
 
-def test_human_summarises_an_action_in_one_line(
+def test_an_action_is_one_line(
     runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
 ) -> None:
     write_config(CONFIG)
-    result = invoke(runner, "click", "--role", "button", "--name", "Invia", "--human")
+    result = invoke(runner, "click", "--role", "button", "--name", "Invia")
     assert result.exit_code == EXIT_OK
     out = strip_ansi(result.stdout).strip()
     assert out.count("\n") == 0
@@ -454,22 +452,22 @@ def test_human_summarises_an_action_in_one_line(
     assert "via the platform API" in out
 
 
-def test_under_human_an_error_leaves_stdout_empty(
+def test_an_error_leaves_stdout_empty(
     runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
 ) -> None:
     # A reader scrolling back should not have to work out which stream said what.
     write_config(CONFIG)
-    result = invoke(runner, "click", "--role", "button", "--human")
+    result = invoke(runner, "click", "--role", "button")
     assert result.exit_code == EXIT_FAILURE
     assert strip_ansi(result.stdout).strip() == ""
     assert "AmbiguousNodeError" in strip_ansi(result.stderr)
 
 
-def test_without_the_flag_it_is_still_json(
+def test_the_envelope_is_one_flag_away(
     runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
 ) -> None:
     # The contract holds for every invocation that does not ask for prose, and --human is never
     # inferred from isatty(): agents run under a pty too.
     write_config(CONFIG)
-    result = invoke(runner, "windows")
+    result = invoke(runner, "windows", "--format", "json")
     assert json.loads(result.stdout)["ok"] is True

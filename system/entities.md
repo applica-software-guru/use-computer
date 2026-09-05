@@ -3,7 +3,7 @@ title: "Entities"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "2.2"
+version: "2.3"
 ---
 
 # Entities
@@ -123,7 +123,8 @@ An enum: `auto` | `action` | `coordinate`. Which rung an element-addressed actio
 A discriminated union on `action`, with one variant per member of the action set:
 
 `MoveAction`, `ClickAction`, `DoubleClickAction`, `RightClickAction`, `DragAction`,
-`ScrollAction`, `TypeAction`, `KeyAction`, `ScreenshotAction`, `TreeAction`, `FocusAction`,
+`ScrollAction`, `TypeAction`, `KeyAction`, `ScreenshotAction` (which also carries `of`, `pad` and `window` for cropping to an element),
+`TreeAction`, `FocusAction`,
 `ToggleAction`, `ExpandAction`, `CollapseAction`, `SelectAction`, `SetValueAction`,
 `ShowMenuAction`, `WindowsAction`.
 
@@ -139,7 +140,9 @@ wins. `FocusAction`, `ToggleAction`, `ExpandAction`, `CollapseAction`, `SelectAc
 
 ### Screenshot
 
-`path: Path`, `width`, `height`, `space`, `captured_at`.
+`path: Path`, `width`, `height`, `space`, `captured_at`, and — when it was cropped to an element —
+`of: str | None` (the node id) and `box: tuple[int, int, int, int] | None` (the crop, in screenshot
+pixels).
 
 A screenshot that has been surfaced to the caller always has a path: it is a file. `data` is held
 in memory only while a comparison needs it, is never serialised, and never crosses the JSON

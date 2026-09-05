@@ -10,6 +10,7 @@ from typing import Any
 
 from use_computer.accessibility import roles
 from use_computer.accessibility.base import require
+from use_computer.errors import UITreeUnavailableError
 from use_computer.tree import Box, TreeScope, TreeScopeKind, UINode, WindowInfo
 
 
@@ -33,6 +34,10 @@ class UiaProvider:
                         id=f"0/{index}",
                         title=window.Name or None,
                         role=roles.uia_role(window.ControlTypeName or ""),
+                        # UI Automation reports the process id and not its name, and turning one
+                        # into the other needs an API this package does not carry. Left empty
+                        # rather than guessed; the pid still tells two windows apart.
+                        app=None,
                         pid=int(window.ProcessId),
                         box=self._box(window),
                         active=bool(window.HasKeyboardFocus),
@@ -48,21 +53,21 @@ class UiaProvider:
 
     def _root_for(self, scope: TreeScope) -> Any:
         auto = self._auto
+        root = auto.GetRootControl()
         if scope.kind is TreeScopeKind.ALL:
-            return auto.GetRootControl()
+            return root
         if scope.kind is TreeScopeKind.FOCUSED:
             control = auto.GetFocusedControl()
-            return self._top_window(control) if control else auto.GetRootControl()
-        for window in auto.GetRootControl().GetChildren():
+            return self._top_window(control) if control else root
+        # A title has already been resolved to an id above the Protocol, so only an id or a pid
+        # reaches a provider. Keeping the matching in one place is what stops three platforms
+        # drifting apart on it.
+        for index, window in enumerate(root.GetChildren()):
+            if scope.kind is TreeScopeKind.ID and scope.value == f"0/{index}":
+                return window
             if scope.kind is TreeScopeKind.PID and str(window.ProcessId) == scope.value:
                 return window
-            if (
-                scope.kind is TreeScopeKind.TITLE
-                and scope.value
-                and scope.value.casefold() in (window.Name or "").casefold()
-            ):
-                return window
-        return auto.GetRootControl()
+        raise UITreeUnavailableError(f"no window matches {scope.value!r}.")
 
     def _top_window(self, control: Any) -> Any:
         """Walk up to the window the focused control lives in."""

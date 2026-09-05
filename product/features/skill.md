@@ -3,7 +3,7 @@ title: "Agent Skill"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.4"
+version: "2.0"
 ---
 
 # Agent Skill
@@ -30,19 +30,15 @@ content is part of the specification, not a README:
 2. **Both addressing modes**, with a worked example of each, and the explicit statement that pixel
    coordinates remain correct and supported.
 3. **`set-value` versus `type`**, because choosing wrong there fails silently in real applications.
-4. **How to read the rendering.** `tree` and `windows` come back as one line per node with a
-   legend at the top, not as objects. The skill teaches that line format, because it is what an
-   agent will actually be looking at — `--format json` exists and is not the default.
+4. **How to read the output.** Everything comes back as text: one line per node, per window or
+   per action. The skill teaches those line formats, because they are what an agent looks at.
+   It must **not** tell the agent to parse stdout, which is what it used to say first.
 5. **What is abbreviated, and how to get the rest.** A `value` is clamped and marked with `…`; an
    off-screen subtree arrives as `offscreen_children` and expands with `--of`; a budgeted tree
    reports `truncated`. An agent that mistakes an abbreviation for the whole thing draws a wrong
    conclusion from a correct answer, so each one has to name its own escape hatch.
 6. **What the errors mean** — ambiguity hands back candidates to choose between; no match is the
    signal to switch to vision, and it already carries the screenshot path.
-
-It must **not** teach `--human`. That flag exists for a person reading a terminal, and an agent
-that reached for it would break its own parsing — the skill is the place that mistake gets made
-once and copied forever.
 
 `x-skill-version` bumps whenever that guidance changes, so `skill status` reports installed copies
 as outdated instead of leaving agents on stale instructions. The `description` line has to keep

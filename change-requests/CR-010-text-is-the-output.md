@@ -1,6 +1,6 @@
 ---
 title: "Text is the output; JSON is the thing you ask for"
-status: pending
+status: applied
 author: "bruno.fortunato@applica.guru"
 created-at: "2026-09-05T00:00:00.000Z"
 ---

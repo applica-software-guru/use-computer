@@ -2,8 +2,8 @@
 title: "Batch Execution"
 status: synced
 author: ""
-last-modified: "2026-09-02T00:00:00.000Z"
-version: "1.0"
+last-modified: "2026-09-05T00:00:00.000Z"
+version: "1.1"
 ---
 
 # Batch Execution
@@ -46,3 +46,17 @@ batch of one and returns the same shape.
   time to respond between steps.
 - `--verify` on a batch applies change detection per action; the before-screenshot of action *n+1*
   may reuse the after-screenshot of action *n* when no delay intervenes.
+
+## What a batch prints
+
+One line per action, numbered, so a failure is locatable without counting:
+
+```
+1 focus text 'Destinatario' via the platform API — 8 ms
+2 type "mario@example.com" — 240 ms
+3 click button 'Invia' via the platform API — 12 ms
+4 tree — 24 nodes, 1 truncated
+```
+
+The exit code says whether it finished; the last line printed says how far it got. `--format json`
+returns the envelope with `ok` and `failed_index` for a caller that would rather branch on fields.

@@ -7,10 +7,15 @@ construction. Everything worth testing has to sit above them, and this is it.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 
-from use_computer.errors import AmbiguousNodeError, NodeNotFoundError
-from use_computer.tree import NodeSelector, UINode
+from use_computer.errors import (
+    AmbiguousNodeError,
+    AmbiguousWindowError,
+    NodeNotFoundError,
+    UITreeUnavailableError,
+)
+from use_computer.tree import NodeSelector, UINode, WindowInfo
 
 #: Roles that are worth keeping even when the platform reports no actions and no name -- an
 #: empty text field has nothing to say about itself and is still the thing an agent came for.
@@ -245,6 +250,34 @@ def matches(node: UINode, selector: NodeSelector) -> bool:
     return True
 
 
+def resolve_window(entries: Sequence[WindowInfo], wanted: str) -> WindowInfo:
+    """Exactly one window, or an error carrying the ones that matched.
+
+    An id is exact and a title is a substring, so a value that is one is never tested as the
+    other. That ordering matters more than it looks: a terminal puts the running command in its
+    own title, so the terminal executing ``--window "X"`` contains X and matches it. Picking the
+    first would return the window the user is looking at rather than the one they named.
+
+    This lives here rather than in a provider because it is policy. Three platforms would
+    otherwise disagree about it, and two of them cannot be tested on this machine at all.
+
+    Raises:
+        UITreeUnavailableError: nothing matched.
+        AmbiguousWindowError: several did, carrying them.
+    """
+    exact = [entry for entry in entries if entry.id == wanted]
+    if exact:
+        return exact[0]
+
+    folded = wanted.casefold()
+    matches = [entry for entry in entries if folded in (entry.title or "").casefold()]
+    if not matches:
+        raise UITreeUnavailableError(f"no window matches {wanted!r}.")
+    if len(matches) > 1:
+        raise AmbiguousWindowError(wanted, matches)
+    return matches[0]
+
+
 def find(root: UINode, selector: NodeSelector) -> list[UINode]:
     """Every node the selector matches, in tree order."""
     return [node for node in walk(root) if matches(node, selector)]
@@ -298,6 +331,7 @@ __all__ = [
     "notable_states",
     "prune",
     "resolve_one",
+    "resolve_window",
     "subtree",
     "summarise_offscreen",
     "walk",

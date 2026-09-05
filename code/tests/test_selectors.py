@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 
 from tests.fake_provider import dialog, node
-from use_computer.errors import AmbiguousNodeError, NodeNotFoundError
+from use_computer.errors import (
+    AmbiguousNodeError,
+    AmbiguousWindowError,
+    NodeNotFoundError,
+    UITreeUnavailableError,
+)
 from use_computer.selectors import (
     budget,
     clamp_text,
@@ -14,10 +19,11 @@ from use_computer.selectors import (
     is_interesting,
     prune,
     resolve_one,
+    resolve_window,
     subtree,
     walk,
 )
-from use_computer.tree import NodeSelector, UINode
+from use_computer.tree import Box, NodeSelector, UINode, WindowInfo
 
 
 def ids(root: UINode) -> list[str]:
@@ -151,3 +157,39 @@ def test_matching_sees_the_full_name_not_the_clamped_one() -> None:
     long_name = "Conferma " + "molto " * 60 + "lungo"
     tree = node("0", "window", "App", children=(node("0/0", "button", long_name),))
     assert resolve_one(tree, NodeSelector(name="lungo")).id == "0/0"
+
+
+# --- matching a window is policy, so it is tested here and not on three desktops ------------------
+
+
+def window(node_id: str, title: str | None, app: str | None = None) -> WindowInfo:
+    return WindowInfo(
+        id=node_id, title=title, role="window", app=app, box=Box(x=0, y=0, width=10, height=10)
+    )
+
+
+def test_a_window_title_that_matches_once_resolves() -> None:
+    entries = [window("0/1", "Ledger"), window("0/2", "Posta")]
+    assert resolve_window(entries, "Ledger").id == "0/1"
+
+
+def test_the_terminal_running_the_command_makes_a_title_ambiguous() -> None:
+    # A terminal puts the running command in its own title, so it contains whatever was asked
+    # for. Picking the first would return the window the user is looking at.
+    entries = [
+        window("0/1", "Report", app="Ledger"),
+        window("0/9", 'use-computer --window "Report"', app="Terminal"),
+    ]
+    with pytest.raises(AmbiguousWindowError) as caught:
+        resolve_window(entries, "Report")
+    assert [w.app for w in caught.value.candidates] == ["Ledger", "Terminal"]
+
+
+def test_an_id_is_exact_and_is_tried_before_any_title() -> None:
+    entries = [window("0/1", "0/9 is a strange title"), window("0/9", "Posta")]
+    assert resolve_window(entries, "0/9").title == "Posta"
+
+
+def test_no_window_matching_says_so() -> None:
+    with pytest.raises(UITreeUnavailableError):
+        resolve_window([window("0/1", "Ledger")], "Posta")
