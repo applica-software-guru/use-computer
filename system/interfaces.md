@@ -2,8 +2,8 @@
 title: "Interfaces"
 status: synced
 author: ""
-last-modified: "2026-09-05T13:30:00.000Z"
-version: "4.1"
+last-modified: "2026-09-05T14:20:00.000Z"
+version: "4.2"
 ---
 
 # Interfaces
@@ -425,6 +425,12 @@ addressable and every one of those decisions is testable without a desktop.
 
 `windows` is a shallow read of the same tree and must tolerate an application that does not answer:
 it loses that application, never the list.
+
+**It reads the desktop once.** Everything a caller needs about a window comes out of that pass,
+including the `focused` fallback used when nothing claims `active` — a second walk costs as much as
+the first, and there is no state here worth re-reading. Measured when this was got wrong: 879 D-Bus
+calls against 145, on the branch taken while an application is starting up, which is when calls are
+least likely to be answered and each one costs the full per-call bound.
 
 `perform` returns whether the platform actually carried the action out. It is a boolean rather than
 `None` because several of these APIs report failure by returning false rather than raising, and a

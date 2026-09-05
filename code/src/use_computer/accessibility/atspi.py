@@ -133,36 +133,28 @@ class AtspiProvider:
     # --- reading -----------------------------------------------------------------------------
 
     def windows(self) -> list[WindowInfo]:
-        found = [info for info, _ in self._window_pairs()]
-        if any(info.active for info in found):
-            return found
+        rows = self._window_pairs()
+        if any(info.active for info, _, _ in rows):
+            return [info for info, _, _ in rows]
         # Nothing claims `active`. Some desktops only ever report `focused`, so fall back to it
         # rather than returning a list with no mark at all -- but never mix the two: `focused` on
         # this desktop marks the shell, which is not a window anybody wants to act in.
-        return [
-            info.model_copy(update={"active": info.id in self._focused_ids()})
-            for info in found
-        ]
+        #
+        # From the pass that already read the states. The previous form called a method that
+        # re-walked every application, from inside a comprehension, so a 14-window desktop paid
+        # 14 full enumerations: 879 D-Bus calls against 145, and at the per-call bound that is
+        # twelve minutes rather than two. And this is the branch taken while an application is
+        # starting up -- exactly when calls are least likely to be answered.
+        return [info.model_copy(update={"active": focused}) for info, _, focused in rows]
 
-    def _focused_ids(self) -> frozenset[str]:
-        ids: set[str] = set()
-        try:
-            desktop = self._desktop()
-            for app_index, app in enumerate(self._children(desktop)):
-                try:
-                    for index, window in enumerate(self._children(app)):
-                        if "focused" in set(self._states(window)):
-                            ids.add(f"0/{app_index}/{index}")
-                except Exception:
-                    continue
-        except Exception:
-            return frozenset()
-        return frozenset(ids)
+    def _window_pairs(self) -> list[tuple[WindowInfo, Any, bool]]:
+        """Every window, the accessible it describes, and whether it reports `focused`.
 
-    def _window_pairs(self) -> list[tuple[WindowInfo, Any]]:
-        """Every window, with the accessible it describes, so a match can be acted on."""
+        One pass. Anything a caller needs about a window is read here, because a second walk of
+        the desktop costs as much as the first and there is no state here worth re-reading.
+        """
         desktop = self._desktop()
-        found: list[tuple[WindowInfo, Any]] = []
+        found: list[tuple[WindowInfo, Any, bool]] = []
         for app_index, app in enumerate(self._children(desktop)):
             try:
                 pid = self._pid(app)
@@ -181,6 +173,7 @@ class AtspiProvider:
                                 active="active" in states,
                             ),
                             window,
+                            "focused" in states,
                         )
                     )
             except Exception:
