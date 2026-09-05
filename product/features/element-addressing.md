@@ -3,7 +3,7 @@ title: "Element Addressing"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.0"
+version: "1.1"
 ---
 
 # Element Addressing
@@ -68,7 +68,15 @@ guess.**
 
 `--id` is an accelerator, and it is **fingerprint-checked**: the node still at that path must still
 carry the same role and name, or the action refuses and says the tree moved. A path is not an
-identity — a row inserted above shifts every index below it.
+identity — a row inserted above shifts every index below it. So pass `--id` **together with the
+`--role` and `--name` that `tree` reported**: the id alone is only a path, and the fingerprint is
+what turns it into a claim that can be checked.
+
+**An id is relative to the scope it came from.** `0/0/0/1/6` under `--window "Conferma"` and the
+same string under `--window all` are different paths into different trees, and the second one
+resolves to a different node or to none at all. Reuse the `--window` the tree was read with. The
+fingerprint is the safety net when you do not — it is what turns "acted on the wrong thing" into
+"the tree moved", which is a message rather than a wrong click.
 
 ## `--via` chooses the rung, the result reports it
 

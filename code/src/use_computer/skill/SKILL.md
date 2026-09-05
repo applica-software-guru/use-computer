@@ -92,6 +92,10 @@ use-computer show-menu --id 0/1/4
 just a path, and paths shift when a row is inserted above; with the role and name it is checked,
 and you are told the tree moved instead of acting on the wrong thing.
 
+**And reuse the same `--window`.** An id is a path relative to the scope it was read from, so
+`0/2/1/3` from `tree --window "Conferma"` is a different path under `--window all`. When in doubt,
+re-read the tree with the scope you are about to act in.
+
 ### `set-value` is not `type`
 
 `set-value` assigns the text atomically and sends **no keystrokes**. It is faster, and some

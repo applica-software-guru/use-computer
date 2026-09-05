@@ -3,7 +3,7 @@ title: "UI Tree"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.1"
+version: "1.2"
 ---
 
 # UI Tree
@@ -46,8 +46,10 @@ By default it snapshots the **focused window**, not the whole desktop.
 }
 ```
 
-- **`id`** — a structural path in the *full* tree. It addresses the node in `--of` and in
-  [element addressing](element-addressing.md), where it is fingerprint-checked before use.
+- **`id`** — a structural path in the *full* tree, **relative to the scope that was read**. It
+  addresses the node in `--of` and in [element addressing](element-addressing.md), where it is
+  fingerprint-checked before use. An id from one `--window` does not mean the same thing under
+  another.
 - **`actions`** — the canonical actions this node actually supports. An empty list means the
   platform exposes no way to operate it, so it must be clicked by coordinate. This is what makes
   element addressing discoverable instead of guesswork.
