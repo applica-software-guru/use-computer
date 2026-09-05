@@ -3,7 +3,7 @@ title: "Tech Stack"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.4"
+version: "1.5"
 ---
 
 # Tech Stack
@@ -61,6 +61,28 @@ Backends are optional extras, imported lazily, so the package installs without t
   pyautogui, and it should be applied consistently or not at all.
 
 ## Development
+
+### The virtualenv has to be the distro's Python
+
+`gi` is a **compiled** extension, built for one Python minor version, and it comes from the distro.
+A virtualenv on any other interpreter cannot import it however `--system-site-packages` is set, so
+`uv run use-computer tree` on a machine whose default is a different minor version fails with the
+capability missing. Build the environment on the interpreter the distro built it for:
+
+```bash
+uv venv --python /usr/bin/python3 --system-site-packages
+uv sync --all-extras
+```
+
+`uv sync` keeps the flag, so this is a one-off. **Do not commit a `.python-version`** pinning a
+number: the right interpreter is whichever one that machine's distro packaged `gi` for, and a pin
+would send uv off to download a standalone build that has no `gi` at all — the exact failure this
+avoids.
+
+There is a second reason to like it. On Ubuntu 22.04 this puts local development on **3.10**, the
+declared floor, while CI covers 3.12. [BUG-002](../bugs/BUG-002-required-options-exit-1-on-the-typer-floor.md)
+lived at the floor and was invisible on a newer typer until the release rehearsal found it; running
+there by default is how that gets caught before CI rather than after.
 
 - **pytest** + **pytest-mock**, with a **fake backend** that records the actions it was asked to
   perform.

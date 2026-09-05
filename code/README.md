@@ -40,6 +40,11 @@ python3 -m venv --system-site-packages .venv
 .venv/bin/pip install "use-computer-cli[local]"
 ```
 
+`gi` is a compiled extension built for one Python minor version -- Ubuntu 22.04 ships it for 3.10 --
+so the virtualenv has to be the distro's `python3`, not another minor version. Both packages report
+as installed either way, which is why the error message checks and says which case you are in.
+With uv: `uv venv --python /usr/bin/python3 --system-site-packages`.
+
 The distribution is `use-computer-cli` because `use-computer` is taken on PyPI by an unrelated
 project. The command it installs is `use-computer`, and the package it imports is `use_computer`.
 
