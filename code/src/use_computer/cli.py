@@ -56,7 +56,7 @@ from use_computer.skill import install as skill_install
 from use_computer.skill import remove as skill_remove
 from use_computer.skill import status as skill_status
 from use_computer.skill import update as skill_update
-from use_computer.tree import NodeSelector, TreeScope, Via
+from use_computer.tree import NodeSelector, OutputFormat, TreeScope, Via
 
 
 class BackendKind(str, Enum):
@@ -144,6 +144,10 @@ WindowOption = Annotated[
     str | None, typer.Option("--window", help="focused | all | TITLE | @PID.", metavar="SCOPE")
 ]
 ViaOption = Annotated[Via, typer.Option("--via", help="Which rung to take.")]
+FormatOption = Annotated[
+    OutputFormat,
+    typer.Option("--format", help="Rendered text (cheap to read), or objects to parse."),
+]
 
 
 def _build(
@@ -478,12 +482,13 @@ def screenshot(
 
 @app.command()
 def windows(
+    format: FormatOption = OutputFormat.TEXT,
     use: UseOption = None,
     verbose: VerboseOption = 0,
 ) -> None:
     """List what is open. Make this call first: it costs a fraction of a tree."""
     config = _config(use, verbose=verbose)
-    _run([WindowsAction()], config, verbose)
+    _run([WindowsAction(format=format)], config, verbose)
 
 
 @app.command()
@@ -505,6 +510,7 @@ def tree(
     no_fallback: Annotated[
         bool, typer.Option("--no-fallback", help="Do not capture a screenshot when there is none.")
     ] = False,
+    format: FormatOption = OutputFormat.TEXT,
     use: UseOption = None,
     verbose: VerboseOption = 0,
 ) -> None:
@@ -521,6 +527,7 @@ def tree(
                 full=full,
                 out=out,
                 fallback=False if no_fallback else None,
+                format=format,
             )
         ],
         config,

@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, TypeAdapter, field_validator, model_valid
 
 from use_computer.coordinates import Coordinate, CoordinateSpace, ScreenInfo, convert
 from use_computer.keys import KeyCombo, canonical, parse_combo
-from use_computer.tree import NodeSelector, TreeScope, Via
+from use_computer.tree import NodeSelector, OutputFormat, TreeScope, Via
 
 
 class MouseButton(str, Enum):
@@ -208,6 +208,9 @@ class TreeAction(BaseAction):
     fallback: bool | None = Field(
         default=None, description="Screenshot when there is no tree. None uses configuration."
     )
+    format: OutputFormat = Field(
+        default=OutputFormat.TEXT, description="Rendered text, or objects to parse."
+    )
 
     @field_validator("window", mode="before")
     @classmethod
@@ -219,6 +222,9 @@ class WindowsAction(BaseAction):
     """List what is open. The cheapest read there is, and the one to make first."""
 
     action: Literal["windows"] = "windows"
+    format: OutputFormat = Field(
+        default=OutputFormat.TEXT, description="Rendered text, or objects to parse."
+    )
 
 
 class _ElementAction(BaseAction, _Selectable):

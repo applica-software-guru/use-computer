@@ -55,13 +55,16 @@ and read `screen` from the result; do not compute a factor and retry with differ
 use-computer windows --use laptop
 ```
 
-```json
-[{"id": "0/29/0", "title": "Conferma", "role": "window",
-  "pid": 4711, "box": [0, 0, 1920, 1038], "active": true}]
+The `windows` field of the result carries a rendering, one line per window:
+
+```
+# id role "title" pid x,y wxh *active
+0/29/0 window "Conferma" 4711 0,0 1920x1038 *
+0/33/0 window "Posta" 5210 331,130 1152x784
 ```
 
-Use the `title` as `--window` for everything that follows. `active: true` is the one `--window
-focused` resolves to.
+Use the `title` as `--window` for everything that follows. The `*` marks the one `--window focused`
+resolves to. A `-` where the pid should be means the platform did not report one.
 
 ## Reading the tree
 
@@ -73,20 +76,33 @@ use-computer tree --of 0/2/1                      # expand a subtree
 use-computer tree --full                          # everything, unabbreviated
 ```
 
-Each node looks like this:
+The tree arrives **rendered**, in the `text` field — one line per node, with a legend on top. It
+costs 39% of the tokens the object form does, which is why it is the default:
 
-```json
-{"id": "0/2/1/3", "role": "button", "name": "Invia",
- "actions": ["click", "focus"], "box": [412, 260, 88, 32]}
+```
+# id role "name" !states [actions] x,y wxh +offscreen
+0 window "Conferma" !modal 0,0 1920x1038
+  0/0 panel 0,32 1920x1006
+    0/0/0/0 menu "File" [click,select] 0,32 37x28 +5
+    0/2/1/3 button "Invia" [click,focus] 412,260 88x32
 ```
 
-- **`box` is `[x, y, width, height]`** in actuation units. To click it by coordinate, aim at its
-  centre: `x + width/2`, `y + height/2`, with `--space actuation`.
-- **`actions`** tells you what the platform can do to this node. An **empty list** means it can
-  only be clicked by coordinate — that is rung two, and `click` handles it for you.
-- **`states`** appears only when there is something surprising to say: `disabled`, `checked`,
-  `selected`, `expanded`. **No `states` means an ordinary, enabled, visible node.** Do not read the
-  absence of `disabled` as anything other than "it is enabled".
+Read a line left to right:
+
+- **`id`** — pass it to `--id`, or to `--of` to expand.
+- **`role`** and **`"name"`** — what you pass to `--role` and `--name`.
+- **`!states`** appears only when there is something surprising to say: `!disabled`, `!checked`,
+  `!selected`, `!expanded`. **No `!` means an ordinary, enabled, visible node** — do not read its
+  absence as anything but "it is fine".
+- **`[actions]`** — what the platform can do to this node. **No brackets** means it can only be
+  clicked by coordinate; that is rung two and `click` handles it for you.
+- **`x,y wxh`** — the box, in actuation units. To click it by coordinate aim at its centre,
+  `x + w/2, y + h/2`, with `--space actuation`.
+- **`+5`** — five descendants are off screen. See below.
+- Indentation is depth, and it is also in the id. Either will do.
+
+`--format json` gives you `root` as nested objects instead, if you would rather parse than read.
+stdout is one JSON object either way.
 
 ## Three things are abbreviated. Each says so, and each has a way back
 

@@ -256,15 +256,41 @@ def provider(monkeypatch: pytest.MonkeyPatch) -> object:
     return instance
 
 
-def test_tree_emits_the_tree_as_json(
+def test_tree_renders_inside_the_single_json_object(
     runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
 ) -> None:
     write_config(CONFIG)
     result = invoke(runner, "tree")
     assert result.exit_code == EXIT_OK
+    # stdout is still exactly one JSON object -- that is the whole reason the rendering is a
+    # field rather than a replacement for it.
     tree = json.loads(result.stdout)["results"][0]["tree"]
-    assert tree["root"]["role"] == "dialog"
+    assert tree["root"] is None
+    assert tree["text"].startswith('# id role "name"')
+    assert '0 dialog "Conferma"' in tree["text"]
     assert tree["reason"] is None
+
+
+def test_tree_returns_objects_when_asked(
+    runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
+) -> None:
+    write_config(CONFIG)
+    result = invoke(runner, "tree", "--format", "json")
+    assert result.exit_code == EXIT_OK
+    tree = json.loads(result.stdout)["results"][0]["tree"]
+    assert tree["text"] is None
+    assert tree["root"]["role"] == "dialog"
+
+
+def test_windows_renders_too(
+    runner: CliRunner, backend: FakeBackend, provider: object, write_config: WriteConfig
+) -> None:
+    write_config(CONFIG)
+    result = invoke(runner, "windows")
+    assert result.exit_code == EXIT_OK
+    payload = json.loads(result.stdout)["results"][0]["windows"]
+    assert payload["text"].startswith('# id role "title"')
+    assert payload["windows"] == []
 
 
 def test_clicking_by_name_reports_the_rung_it_took(

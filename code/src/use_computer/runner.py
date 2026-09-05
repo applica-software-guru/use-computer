@@ -17,6 +17,7 @@ from typing import Any, NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from use_computer import render
 from use_computer.accessibility import AccessibilityProvider, create_provider
 from use_computer.accessibility import roles as canonical
 from use_computer.actions import (
@@ -70,11 +71,12 @@ from use_computer.selectors import (
 from use_computer.tree import (
     Box,
     NodeSelector,
+    OutputFormat,
     TreeReason,
     TreeResult,
     UINode,
     Via,
-    WindowInfo,
+    WindowsResult,
 )
 
 #: Which canonical accessibility action each member of the action set asks the platform for.
@@ -157,9 +159,7 @@ class ActionResult(BaseModel):
     change: ChangeReport | None = None
     screenshot: Screenshot | None = None
     tree: TreeResult | None = Field(default=None, description="What `tree` read.")
-    windows: tuple[WindowInfo, ...] | None = Field(
-        default=None, description="What `windows` listed."
-    )
+    windows: WindowsResult | None = Field(default=None, description="What `windows` listed.")
     matched: UINode | None = Field(default=None, description="The node a selector resolved to.")
     via: Via | None = Field(
         default=None, description="The rung actually taken; never `auto`."
@@ -176,7 +176,7 @@ class _Outcome(NamedTuple):
 
     screenshot: Screenshot | None = None
     tree: TreeResult | None = None
-    windows: tuple[WindowInfo, ...] | None = None
+    windows: WindowsResult | None = None
     via: Via | None = None
     resolved: Coordinate | None = None
 
@@ -303,7 +303,7 @@ class Session:
         screenshot: Screenshot | None = None
         change: ChangeReport | None = None
         tree: TreeResult | None = None
-        windows: tuple[WindowInfo, ...] | None = None
+        windows: WindowsResult | None = None
         matched: UINode | None = None
         via: Via | None = None
         performed = False
@@ -387,7 +387,10 @@ class Session:
             return _Outcome(tree=self._tree(action))
 
         if isinstance(action, WindowsAction):
-            return _Outcome(windows=tuple(self._provider().windows()))
+            found = tuple(self._provider().windows())
+            if action.format is OutputFormat.JSON:
+                return _Outcome(windows=WindowsResult(windows=found))
+            return _Outcome(windows=WindowsResult(text=render.windows(found)))
 
         if matched is not None:
             via = self._plan_via(action, matched)
@@ -562,7 +565,13 @@ class Session:
                 node_count=total, truncated=truncated, truncated_ids=cut, path=action.out
             )
 
-        return TreeResult(root=root, node_count=total, truncated=truncated, truncated_ids=cut)
+        if action.format is OutputFormat.JSON:
+            return TreeResult(
+                root=root, node_count=total, truncated=truncated, truncated_ids=cut
+            )
+        return TreeResult(
+            text=render.tree(root), node_count=total, truncated=truncated, truncated_ids=cut
+        )
 
     def _no_tree(self, reason: TreeReason, fallback: bool) -> TreeResult:
         shot = self._fallback_screenshot("tree") if fallback else None

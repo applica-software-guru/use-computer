@@ -3,7 +3,7 @@ title: "Entities"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "2.0"
+version: "2.1"
 ---
 
 # Entities
@@ -70,6 +70,11 @@ One element of the accessibility tree:
 - `box: Box`, `center: Coordinate`
 - `children: tuple[UINode, ...]`
 
+### WindowsResult *(frozen)*
+
+What `windows` returns: `text: str | None` — the rendering — and `windows: tuple[WindowInfo, ...]`,
+populated under `--format json`. Symmetrical with `TreeResult`, so the two reads look alike.
+
 ### WindowInfo *(frozen)*
 
 One entry of what `windows` returns: `id`, `title: str | None`, `role`, `pid: int | None`,
@@ -92,6 +97,7 @@ this platform or backend, the OS refused the permission, or the application expo
 
 - `root: UINode | None`
 - `node_count: int`, `truncated: bool`, `truncated_ids: tuple[str, ...]`
+- `text: str | None` — the rendering, with its legend line. Present unless `--format json`
 - `reason: TreeReason | None` — set only when `root` is `None`
 - `screenshot: Screenshot | None` — the fallback capture, when one was taken
 - `path: Path | None` — where the tree was written, when `--out` asked for a file; `root` is then
@@ -149,7 +155,7 @@ pixels), `threshold: float`, `bbox: tuple[int, int, int, int] | None`.
 - `change: ChangeReport | None`
 - `screenshot: Screenshot | None`
 - `tree: TreeResult | None` — for `tree`
-- `windows: tuple[WindowInfo, ...] | None` — for `windows`
+- `windows: WindowsResult | None` — for `windows`
 - `matched: UINode | None` — the node a selector resolved to
 - `via: Via | None` — the rung actually taken; `action` or `coordinate`, never `auto`
 - `error: ErrorInfo | None`

@@ -3,7 +3,7 @@ title: "CLI"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.3"
+version: "1.4"
 ---
 
 # CLI
@@ -21,6 +21,7 @@ use-computer key ctrl+s --use staging
 use-computer screenshot --use laptop
 use-computer windows --use laptop
 use-computer tree --use laptop
+use-computer tree --format json --use laptop
 use-computer click --role button --name "Invia" --use laptop
 use-computer set-value --id 0/2/1 --value "mario@example.com" --use laptop
 use-computer batch actions.json --use staging
@@ -47,6 +48,12 @@ An agent can therefore pipe stdout into a JSON parser unconditionally.
 | `--space <screenshot\|actuation>` | Coordinate space of the coordinates given. |
 | `--delay <seconds>` | Delay applied after each action. |
 | `-v/-vv` | Verbosity on stderr. |
+
+## Reading flags
+
+`tree` and `windows` take `--format text|json`, defaulting to **text**: the rendering is a string
+field inside the same single JSON object, and it costs 39% of the tokens the structured form does.
+`--format json` returns objects, for a caller that parses rather than reads.
 
 ## Selector flags
 

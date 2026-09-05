@@ -54,12 +54,14 @@ from use_computer.runner import ActionResult, ErrorInfo, RunResult, Session, run
 from use_computer.tree import (
     Box,
     NodeSelector,
+    OutputFormat,
     TreeReason,
     TreeResult,
     TreeScope,
     UINode,
     Via,
     WindowInfo,
+    WindowsResult,
 )
 
 #: The distribution name on PyPI, which differs from the import package: `use-computer` was
@@ -103,6 +105,7 @@ __all__ = [
     "MoveAction",
     "NodeNotFoundError",
     "NodeSelector",
+    "OutputFormat",
     "PermissionDeniedError",
     "ResolvedConfig",
     "RightClickAction",
@@ -129,6 +132,7 @@ __all__ = [
     "Via",
     "WindowInfo",
     "WindowsAction",
+    "WindowsResult",
     "__version__",
     "compare",
     "convert",

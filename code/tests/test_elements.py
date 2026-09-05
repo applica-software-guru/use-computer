@@ -20,7 +20,7 @@ from use_computer.actions import (
 )
 from use_computer.config import Settings
 from use_computer.runner import Session
-from use_computer.tree import NodeSelector, TreeReason, TreeScope, Via
+from use_computer.tree import NodeSelector, OutputFormat, TreeReason, TreeScope, Via
 
 
 def session(provider: FakeProvider | None = None, **settings: object) -> Session:
@@ -40,7 +40,7 @@ def button() -> NodeSelector:
 
 
 def test_tree_returns_a_pruned_tree() -> None:
-    result = session().run([TreeAction()]).results[0]
+    result = session().run([TreeAction(format=OutputFormat.JSON)]).results[0]
     assert result.ok
     assert result.tree is not None
     assert result.tree.root is not None
@@ -49,7 +49,7 @@ def test_tree_returns_a_pruned_tree() -> None:
 
 
 def test_tree_filters_to_a_flat_list_of_matches() -> None:
-    result = session().run([TreeAction(role="button")]).results[0]
+    result = session().run([TreeAction(role="button", format=OutputFormat.JSON)]).results[0]
     root = result.tree.root  # type: ignore[union-attr]
     assert root is not None
     assert [child.name for child in root.children] == ["Invia", "Annulla"]
@@ -57,7 +57,7 @@ def test_tree_filters_to_a_flat_list_of_matches() -> None:
 
 
 def test_tree_budget_reports_truncation_and_where_to_re_enter() -> None:
-    result = session(tree_max_nodes=2).run([TreeAction()]).results[0]
+    result = session(tree_max_nodes=2).run([TreeAction(format=OutputFormat.JSON)]).results[0]
     tree = result.tree
     assert tree is not None
     assert tree.truncated is True
@@ -65,13 +65,13 @@ def test_tree_budget_reports_truncation_and_where_to_re_enter() -> None:
 
 
 def test_of_re_enters_at_a_node() -> None:
-    result = session().run([TreeAction(of="0/1", full=True)]).results[0]
+    result = session().run([TreeAction(of="0/1", full=True, format=OutputFormat.JSON)]).results[0]
     root = result.tree.root  # type: ignore[union-attr]
     assert root is not None and root.id == "0/1"
 
 
 def test_no_provider_reports_why_and_hands_over_a_screenshot() -> None:
-    result = session(unavailable()).run([TreeAction()]).results[0]
+    result = session(unavailable()).run([TreeAction(format=OutputFormat.JSON)]).results[0]
     tree = result.tree
     assert result.ok  # not a failure: it answered, and the answer is "there is none"
     assert tree is not None
@@ -82,23 +82,25 @@ def test_no_provider_reports_why_and_hands_over_a_screenshot() -> None:
 
 
 def test_a_denied_permission_is_its_own_reason() -> None:
-    tree = session(denied()).run([TreeAction()]).results[0].tree
+    tree = session(denied()).run([TreeAction(format=OutputFormat.JSON)]).results[0].tree
     assert tree is not None and tree.reason is TreeReason.DENIED
 
 
 def test_an_application_exposing_nothing_is_empty_not_absent() -> None:
-    tree = session(empty()).run([TreeAction()]).results[0].tree
+    tree = session(empty()).run([TreeAction(format=OutputFormat.JSON)]).results[0].tree
     assert tree is not None and tree.reason is TreeReason.EMPTY
 
 
 def test_no_fallback_leaves_the_screenshot_untaken() -> None:
-    tree = session(unavailable()).run([TreeAction(fallback=False)]).results[0].tree
+    action = TreeAction(fallback=False, format=OutputFormat.JSON)
+    tree = session(unavailable()).run([action]).results[0].tree
     assert tree is not None and tree.screenshot is None
 
 
 def test_out_writes_the_tree_and_returns_its_path(tmp_path: object) -> None:
     target = tmp_path / "tree.json"  # type: ignore[operator]
-    tree = session().run([TreeAction(out=target)]).results[0].tree
+    action = TreeAction(out=target, format=OutputFormat.JSON)
+    tree = session().run([action]).results[0].tree
     assert tree is not None
     assert tree.root is None  # the point of asking for a file
     assert tree.path == target
@@ -325,9 +327,9 @@ def test_windows_lists_what_is_open() -> None:
     item = result.results[0]
     assert item.ok
     assert item.windows is not None
-    assert [w.title for w in item.windows] == ["Conferma"]
-    assert item.windows[0].active is True
-    assert item.windows[0].pid == 4711
+    assert item.windows.text is not None
+    assert '0 dialog "Conferma" 4711' in item.windows.text
+    assert item.windows.text.endswith("*")  # the active one is marked
 
 
 def test_a_node_serialises_without_its_empty_fields() -> None:
@@ -353,7 +355,8 @@ def test_the_tree_drops_states_that_say_nothing_and_names_the_disabled() -> None
             ),
         )
     )
-    root = session(provider).run([TreeAction()]).results[0].tree.root  # type: ignore[union-attr]
+    result = session(provider).run([TreeAction(format=OutputFormat.JSON)]).results[0]
+    root = result.tree.root  # type: ignore[union-attr]
     assert root is not None
     assert root.states == ()  # nothing surprising about a showing, enabled window
     by_name = {child.name: child for child in root.children}
@@ -383,7 +386,8 @@ def test_offscreen_subtrees_are_counted_not_expanded() -> None:
             ),
         )
     )
-    menu = session(provider).run([TreeAction()]).results[0].tree.root.children[0]  # type: ignore[union-attr]
+    read = session(provider).run([TreeAction(format=OutputFormat.JSON)]).results[0]
+    menu = read.tree.root.children[0]  # type: ignore[union-attr]
     assert menu.children == ()
     assert menu.offscreen_children == 2
 
@@ -417,8 +421,30 @@ def test_full_expands_everything() -> None:
             ),
         )
     )
-    root = session(provider).run([TreeAction(full=True)]).results[0].tree.root  # type: ignore[union-attr]
+    read = session(provider).run([TreeAction(full=True, format=OutputFormat.JSON)]).results[0]
+    root = read.tree.root  # type: ignore[union-attr]
     assert root is not None
     assert set(root.states) == {"enabled", "showing"}
     assert root.children[0].children[0].name == "Prefs"
     assert root.children[0].offscreen_children == 0
+
+
+def test_the_tree_comes_back_rendered_by_default() -> None:
+    tree = session().run([TreeAction()]).results[0].tree
+    assert tree is not None
+    assert tree.root is None  # objects only when asked for
+    assert tree.text is not None
+    lines = tree.text.split("\n")
+    assert lines[0].startswith("# id role")  # the legend makes it self-describing
+    assert '0/1/0 button "Invia" [click,focus] 412,260 88x32' in tree.text
+    assert tree.node_count > 0  # counts stay structured: they are read by code
+
+
+def test_windows_lists_objects_when_asked() -> None:
+    from use_computer.tree import OutputFormat as F
+
+    result = session().run([WindowsAction(format=F.JSON)]).results[0]
+    assert result.windows is not None
+    assert result.windows.text is None
+    assert [w.title for w in result.windows.windows] == ["Conferma"]
+    assert result.windows.windows[0].pid == 4711

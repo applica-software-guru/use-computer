@@ -3,7 +3,7 @@ title: "Architecture"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.2"
+version: "1.3"
 ---
 
 # Architecture
@@ -24,6 +24,7 @@ config.py         project-root discovery, layered settings, config show
 tree.py           pure: UINode, Box, TreeScope, TreeResult, NodeSelector, Via
 selectors.py      pure: match a NodeSelector against a tree, prune, budget, clamp text,
                   keep notable states, count what is off screen instead of expanding it
+render.py         pure: one line per node, with a legend -- what the caller actually reads
 backends/
   base.py         the Protocol + BackendNotAvailableError
   local.py        pynput + mss          (extra: local)
@@ -37,8 +38,12 @@ accessibility/
 skill/SKILL.md    package data, shipped in the wheel
 ```
 
-Dependencies point downward only. `coordinates`, `keys`, `compare`, `tree`, `selectors` and
-`accessibility/roles.py` are pure and are the easiest things in the codebase to test — `tree`
+`render.py` takes an already-shaped tree and formats it. It decides nothing: pruning, the budget,
+notable states and the off-screen summary have all happened by the time it runs, which is why it
+stays a page long and tests against a literal string.
+
+Dependencies point downward only. `coordinates`, `keys`, `compare`, `tree`, `selectors`,
+`render` and `accessibility/roles.py` are pure and are the easiest things in the codebase to test — `tree`
 holds the models, `selectors` the policy over them, and neither imports a platform binding.
 
 ## The accessibility provider

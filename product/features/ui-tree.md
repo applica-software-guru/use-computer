@@ -3,7 +3,7 @@ title: "UI Tree"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "2.0"
+version: "3.0"
 ---
 
 # UI Tree
@@ -18,15 +18,50 @@ machine. `tree` is how it asks.
 This does not replace the screenshot; it demotes it. **Ask the tree first, look at the picture only
 when the tree cannot answer.**
 
+## What comes back is rendered, not serialised
+
+Bytes were the wrong unit. Measured on one window, in **tokens**, which is what an agent pays:
+
+| | Bytes | Tokens | |
+| --- | --- | --- | --- |
+| Structured JSON | 3,785 | 1,707 | 100% |
+| The same tree as text | 1,744 | 555 | 33% |
+| That text inside the JSON | 1,817 | **667** | **39%** |
+
+JSON's cost is not verbosity: `{`, `"`, `:`, `,` and every repeated key are each their own token,
+so `"role": "button"` spends five tokens to say one thing — and a tree says it thousands of times.
+
+```
+# id role "name" !states [actions] x,y wxh +offscreen
+0 window "Conferma" !modal 0,0 1920x1038
+  0/0 panel 0,32 1920x1006
+    0/0/0 menubar 0,32 1920x28
+      0/0/0/0 menu "File" [click,select] 0,32 37x28 +5
+    0/0/1 button "Invia" [click,focus] 412,260 88x32
+```
+
+One line per node, and a legend line so the format explains itself to a reader that has never seen
+it. Every field is still there; only the syntax naming them is gone.
+
+**Indentation stays** — it duplicates what the id already encodes, and it measured *free*: 555
+tokens either way, because runs of spaces collapse into a token that would have been spent anyway.
+
+**It travels inside the JSON.** `stdout is JSON and nothing else` is what lets an agent pipe this
+into a parser without knowing which flags produced it, and escaping the newlines costs 112 tokens
+of the 1,040 saved. The rendering is a string field; `--format json` returns `root` as objects
+instead, and the Python API has had objects all along.
+
+`truncated`, `node_count` and `reason` stay structured. They are read by code, they are three
+values rather than thousands, and burying them in prose would be the same mistake backwards.
+
 ## `use-computer windows` — read this first
 
 The cheapest question is "what is open?", and it should not cost a tree.
 
-```json
-[
-  {"id": "0/29/0", "title": "Conferma", "role": "window",
-   "pid": 4711, "box": [0, 0, 1920, 1038], "active": true}
-]
+```
+# id role "title" pid x,y wxh *active
+0/29/0 window "Conferma" 4711 0,0 1920x1038 *
+0/33/0 window "Posta" 5210 331,130 1152x784
 ```
 
 Twelve windows measured at **1,429 bytes** — less than a fifteenth of a single window's tree. It

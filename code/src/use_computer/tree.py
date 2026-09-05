@@ -144,11 +144,30 @@ class WindowInfo(BaseModel):
     active: bool = False
 
 
+class OutputFormat(str, Enum):
+    """How a read comes back. Either way stdout is one JSON object."""
+
+    TEXT = "text"
+    """One line per node inside a string field. 39% of the tokens, and the default."""
+
+    JSON = "json"
+    """Objects, for a caller that parses rather than reads."""
+
+
 class TreeScopeKind(str, Enum):
     FOCUSED = "focused"
     ALL = "all"
     TITLE = "title"
     PID = "pid"
+
+
+class WindowsResult(BaseModel):
+    """What ``windows`` returns. Symmetrical with TreeResult, so the two reads look alike."""
+
+    model_config = ConfigDict(frozen=True)
+
+    text: str | None = None
+    windows: tuple[WindowInfo, ...] = ()
 
 
 class TreeScope(BaseModel):
@@ -193,6 +212,9 @@ class TreeResult(BaseModel):
     node_count: int = 0
     truncated: bool = False
     truncated_ids: tuple[str, ...] = ()
+    text: str | None = Field(
+        default=None, description="The rendering, legend first. Absent under --format json."
+    )
     reason: TreeReason | None = None
     screenshot: Screenshot | None = None
     path: Path | None = Field(
@@ -252,6 +274,7 @@ class NodeSelector(BaseModel):
 
 __all__ = [
     "Box",
+    "OutputFormat",
     "NodeSelector",
     "TreeReason",
     "TreeResult",
@@ -260,4 +283,5 @@ __all__ = [
     "UINode",
     "Via",
     "WindowInfo",
+    "WindowsResult",
 ]

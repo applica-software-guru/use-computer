@@ -3,7 +3,7 @@ title: "Interfaces"
 status: synced
 author: ""
 last-modified: "2026-09-05T00:00:00.000Z"
-version: "2.0"
+version: "2.1"
 ---
 
 # Interfaces
@@ -30,9 +30,10 @@ use-computer screenshot  [--out PATH]
 ### Element commands
 
 ```
-use-computer windows
+use-computer windows     [--format text|json]
 use-computer tree        [--window SCOPE] [--depth INT] [--role ROLE] [--name TEXT]
                          [--full] [--of NODE_ID] [--out PATH] [--no-fallback]
+                         [--format text|json]
 use-computer focus       SELECTOR
 use-computer toggle      SELECTOR
 use-computer expand      SELECTOR
@@ -118,15 +119,22 @@ A screenshot is **never** returned as bytes; there is no base64 anywhere in this
 
 ### `windows` JSON
 
-The `windows` field of the result:
+The `windows` field of the result. By default it carries a rendering:
 
 ```json
-[
+{
+  "text": "# id role \"title\" pid x,y wxh *active\n0/29/0 window \"Conferma\" 4711 0,0 1920x1038 *",
+  "windows": []
+}
+```
+
+`--format json` fills `windows` with objects instead:
+
+```json
+{"text": null, "windows": [
   {"id": "0/29/0", "title": "Conferma", "role": "window",
-   "pid": 4711, "box": [0, 0, 1920, 1038], "active": true},
-  {"id": "0/33/0", "title": "Posta", "role": "window",
-   "pid": 5210, "box": [331, 130, 1152, 784], "active": false}
-]
+   "pid": 4711, "box": [0, 0, 1920, 1038], "active": true}
+]}
 ```
 
 Measured at 119 bytes a window. It must survive an application that will not answer on the
@@ -134,10 +142,31 @@ accessibility bus: that application is missing from the list, the list still com
 
 ### `tree` JSON
 
-The `tree` field of the result:
+The `tree` field of the result. By default `root` is absent and the tree arrives rendered:
 
 ```json
 {
+  "text": "# id role \"name\" !states [actions] x,y wxh +offscreen\n0 window \"Conferma\" !modal 0,0 1920x1038\n  0/2/1/3 button \"Invia\" [click,focus] 412,260 88x32",
+  "root": null,
+  "node_count": 24,
+  "truncated": false,
+  "truncated_ids": [],
+  "reason": null,
+  "screenshot": null
+}
+```
+
+Measured at **667 tokens against 1,707** for the structured form of the same tree — the rendering
+carries every field, and spends none of them on syntax. The escaping of the newlines costs 112 of
+the 1,040 tokens saved, which is what keeping `stdout is JSON and nothing else` is worth.
+
+`truncated`, `node_count` and `reason` stay structured: they are read by code, not by a reader.
+
+With `--format json`:
+
+```json
+{
+  "text": null,
   "root": {
     "id": "0",
     "role": "dialog",
@@ -170,8 +199,13 @@ The `tree` field of the result:
 }
 ```
 
-When no tree can be produced, `root` is `null`, `reason` is `unavailable`, `denied` or `empty`, and
-`screenshot` carries the fallback capture unless `--no-fallback` was given.
+When no tree can be produced, `root` and `text` are both `null`, `reason` is `unavailable`,
+`denied` or `empty`, and `screenshot` carries the fallback capture unless `--no-fallback` was
+given.
+
+**stdout is still exactly one JSON object**, under every format. That is the whole reason the
+rendering is a field rather than a replacement for it: an agent parses stdout without knowing which
+flags produced it, and every error path keeps one shape.
 
 ### Element-addressed result
 
