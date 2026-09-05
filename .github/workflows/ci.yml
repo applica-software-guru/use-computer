@@ -92,11 +92,17 @@ jobs:
       # Backends are optional extras imported lazily. If an import ever escapes
       # to module scope, the package stops installing for everyone who does not
       # want a backend -- and nothing else in the suite would notice.
+      # Into a venv, not `--system`: a hosted runner's system interpreter is
+      # externally managed and refuses. What this job checks is that the wheel
+      # installs and runs with no extras, which a venv checks just as well.
       - name: Install without extras
-        run: uv pip install --system .
+        run: |
+          uv venv "$RUNNER_TEMP/bare"
+          uv pip install --python "$RUNNER_TEMP/bare/bin/python" .
 
       - name: Run it
         run: |
+          export PATH="$RUNNER_TEMP/bare/bin:$PATH"
           use-computer --version
           use-computer --help
           use-computer config init --backend vnc --host 127.0.0.1 --dir "$RUNNER_TEMP" --no-probe

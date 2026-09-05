@@ -32,8 +32,22 @@ Not the missing string: **the missing test run**. A workflow whose first real st
 turns a cosmetic upstream change into a total loss of signal, and a red tick that has been red for
 days stops being read. The 0.3.0 work was written against a suite that CI had not run once.
 
+## And there was a second one underneath
+
+Fixing the first uncovered it, which is the argument for fixing it at all. The job that checks the
+package installs with **no extras** ran `uv pip install --system .`, and a hosted runner's system
+interpreter is now externally managed:
+
+```
+error: The interpreter at /usr is externally managed
+```
+
+It had been failing for as long as the first, invisibly, behind it. The job's question is whether
+the wheel installs and runs with no extras — nothing about it needs the system interpreter, so it
+installs into a venv.
+
 ## Expected
 
 Versions come from `importlib.metadata.version(...)`, which is the packaging metadata rather than a
 convention a library may drop. And the step cannot fail the job: a diagnostic that stops the tests
-is worse than no diagnostic.
+is worse than no diagnostic. Green means the suite ran.

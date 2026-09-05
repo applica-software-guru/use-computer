@@ -3,7 +3,7 @@ title: "Tech Stack"
 status: synced
 author: ""
 last-modified: "2026-09-05T13:15:00.000Z"
-version: "1.6"
+version: "1.7"
 ---
 
 # Tech Stack
@@ -118,6 +118,11 @@ module-level `__version__`, the step raised, and every leg went red *before pyte
 come from `importlib.metadata.version(...)` — packaging metadata rather than a convention a library
 may drop — and the step swallows its own exit code. A red tick that has been red for days stops
 being read, which is the real cost.
+
+The job that proves the package installs **with no extras** installs into a venv, not with
+`--system`: a hosted runner's system interpreter is externally managed and refuses. That failure
+sat behind the diagnostic one and only appeared once it was fixed, which is the argument for not
+leaving a red tick red.
 
 `ruff` runs with a **cold cache** in CI. A stale cache once reported a clean tree while a real
 lint error sat in the file it had already seen; CI is always a machine that has never linted the
