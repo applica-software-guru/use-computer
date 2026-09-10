@@ -1,8 +1,11 @@
 # --- sdd -------------------------------------------------------------------
-# config.yaml carries the sdd remote api-key. This repository is public, so it
-# stays out. If you want the project description versioned, commit this file
-# only after moving the key elsewhere.
-.sdd/config.yaml
+# .sdd is committed: without it a clone is not an SDD project, and `sdd sync`
+# refuses before it can tell you why. Nothing in there is per-machine.
+#
+# config.yaml is committed too, for the project description. The remote
+# api-key must NEVER be written into it -- this repository is public, and a
+# gitignore cannot exclude one key from a tracked file. `SDD_API_KEY` in the
+# environment takes precedence over `remote.api-key`, so put it there.
 
 # --- local project config (use-computer's own .use-computer/) --------------
 # This is a scratch config for driving the tool during development, not part of

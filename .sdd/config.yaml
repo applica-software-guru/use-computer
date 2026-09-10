@@ -1,0 +1,1 @@
+description: 'Executes input on a screen for computer-use agents: reads the accessibility tree of what is on screen, and moves a real pointer and types real keystrokes — locally or over VNC. The acting half of a pair with ui-locator, which answers "where" from pixels.'
