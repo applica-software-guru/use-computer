@@ -86,6 +86,11 @@ class _Positioned(_InAWindow):
 #: the JSON reads the way the CLI flags do.
 _SELECTOR_KEYS = ("id", "role", "name", "exact", "nth", "window")
 
+#: Which of those actually names an element. `window` on its own means "the coordinate belongs to
+#: this window" -- the meaning `_InAWindow.window` already has -- not "build a selector out of
+#: nothing"; `exact` and `nth` likewise only ever qualify a selector one of these anchors named.
+_ANCHOR_KEYS = ("id", "role", "name")
+
 
 class _Selectable(BaseModel):
     """Mixin for actions that can name an element instead of a point."""
@@ -96,12 +101,17 @@ class _Selectable(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _collect_selector(cls, data: Any) -> Any:
-        """Gather the flat selector keys of a batch file into one NodeSelector."""
+        """Gather the flat selector keys of a batch file into one NodeSelector.
+
+        Triggered only by an anchor (`id`, `role` or `name`): a bare `--window` alongside a
+        coordinate is not a caller asking for an element, and building a selector with none of
+        those out of it only fails the selector's own validation a moment later (BUG-019).
+        """
         if not isinstance(data, dict) or data.get("selector") is not None:
             return data
-        present = {key: data[key] for key in _SELECTOR_KEYS if data.get(key) is not None}
-        if not present:
+        if not any(data.get(key) is not None for key in _ANCHOR_KEYS):
             return data
+        present = {key: data[key] for key in _SELECTOR_KEYS if data.get(key) is not None}
         rest = {key: value for key, value in data.items() if key not in _SELECTOR_KEYS}
         window = present.pop("window", None)
         node_id = present.pop("id", None)
