@@ -2,8 +2,8 @@
 title: "Configuration"
 status: synced
 author: ""
-last-modified: "2026-09-05T00:00:00.000Z"
-version: "2.0"
+last-modified: "2026-09-10T00:00:00.000Z"
+version: "2.1"
 ---
 
 # Configuration
@@ -71,7 +71,49 @@ host = "10.0.0.5"
 port = 5900
 ```
 
-A profile is selected with `--use`, falling back to `default-profile`.
+### Selecting one
+
+Three steps, in order:
+
+1. `--use <profile>`, or `USE_COMPUTER_DEFAULT_PROFILE`.
+2. `default-profile`, from any config layer.
+3. **Exactly one profile defined? That is the profile.** Counted across the project config and the
+   global config together — a project file with one profile and a global file with another is two,
+   not one.
+
+The third step exists because the caller that runs this tool most often is an agent, and an agent
+has nothing to choose with: no result it can read distinguishes `laptop` from `staging`. A profile
+names a machine and a backend, which is a fact about the installation settled once by whoever set
+it up — not a decision to be made per command. When only one is defined there is nothing to
+disambiguate, so there is nothing to ask.
+
+**It grants nothing.** `allow-local` remains a separate opt-in, so a lone `local` profile that has
+not given it is selected and still refuses. The refusal that matters is untouched.
+
+**And it is not invisible.** The choice is attributed like every other resolved value, so
+`config show` names the layer it came from. A profile chosen by counting is fine; a profile chosen
+silently is the kind of thing that is discovered at the worst moment.
+
+**It has a cost, and it is the right one.** The day a second profile is added, bare commands that
+worked yesterday become ambiguous. One machine is the common case; two machines means somebody is
+paying attention, and the refusal below tells them exactly what to do.
+
+### When it cannot pick
+
+**One instruction, never a menu.** Three alternatives is a question, and an agent answers a
+question about a profile by guessing a name. So the refusal branches on what is actually true:
+
+- **No configuration at all** — the machine was never set up. Name `use-computer config init`, and
+  nothing else.
+- **A config that declares no profiles** — name the file and say to add a `[profiles.<name>]`
+  section with a `backend`. Not `config init`: a config already exists, and `init` refuses to
+  overwrite one.
+- **Several profiles, none marked default** — neither the tool nor the agent can pick. List the
+  names that exist and say that `default-profile` has to be set. The list is for the person
+  reading the transcript; it is not an invitation to choose one at random.
+
+Neither message is something an agent should work around. Guessing a profile name, or running
+`config init` on somebody's machine to get past an error, is worse than stopping.
 
 ## Where screenshots go
 
@@ -163,6 +205,9 @@ Highest to lowest:
 5. Top-level config keys
 6. The global (XDG) config
 7. Field defaults
+
+This orders the **values**. Which profile is selected is settled before any of it, by the three
+steps above.
 
 ## `config show`
 

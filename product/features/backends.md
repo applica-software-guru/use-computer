@@ -2,8 +2,8 @@
 title: "Backends"
 status: synced
 author: ""
-last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.4"
+last-modified: "2026-09-10T00:00:00.000Z"
+version: "1.5"
 ---
 
 # Backends
@@ -99,8 +99,8 @@ names the exact extra to install. That message is what a stuck agent reads, so i
 
 ## Named profiles
 
-A backend is selected by a **named profile** in the project-local config file, chosen with a
-`--use` flag:
+A backend is selected by a **named profile** in the project-local config file. `--use` names one
+explicitly, and where only one is defined it is selected without being named:
 
 ```toml
 [profiles.laptop]

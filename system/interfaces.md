@@ -2,8 +2,8 @@
 title: "Interfaces"
 status: synced
 author: ""
-last-modified: "2026-09-05T14:20:00.000Z"
-version: "4.2"
+last-modified: "2026-09-10T00:00:00.000Z"
+version: "4.3"
 ---
 
 # Interfaces
@@ -85,6 +85,11 @@ use-computer skill  install|update|remove|status
 
 `--use PROFILE`, `--dry-run`, `--verify`, `--space screenshot|actuation`, `--delay SECONDS`,
 `-v/-vv`, `--format text|json`, `--version`.
+
+`--use` is optional wherever the profile is already determined: by `default-profile` in any layer,
+by `USE_COMPUTER_DEFAULT_PROFILE`, or because exactly one profile is defined across the project
+and global config files. Selection happens before value resolution, and the selected profile is
+reported by `config show` with the layer that chose it.
 
 `--version`, `config show` and `skill` obey `--format` like everything else: text by default
 (`use-computer 0.2.2`, and aligned `key  value  layer  source` lines), the object under
@@ -311,6 +316,30 @@ is exactly the signal to switch to vision.
 `windows` field. It is not a rare case: a terminal puts the running command in its own title, so
 the terminal executing `--window "X"` matches X.
 
+### Configuration errors
+
+`ConfigError` is exit code `1`. Profile selection produces one message **per state**, each naming a
+single next move — never one menu of alternatives, because an agent reading a menu answers it by
+guessing a profile name:
+
+```
+no configuration found; run `use-computer config init`
+```
+
+```
+/work/.use-computer/config.toml defines no profiles; add a [profiles.<name>] section
+declaring a `backend`
+```
+
+```
+several profiles are defined (laptop, staging) and none is the default;
+set `default-profile` in /work/.use-computer/config.toml
+```
+
+The names are listed for the person reading the transcript, not as an invitation to pick one. A
+single declared profile produces none of these: it is selected, and `config show` reports it with
+the layer of the file that declared it.
+
 ### Batch input JSON
 
 A JSON array of action objects, discriminated on `action`. The discriminator accepts **the CLI's
@@ -513,6 +542,8 @@ scale = 1.0
 ```
 
 `.use-computer/.env` (gitignored) carries secrets such as `USE_COMPUTER_PROFILES__STAGING__PASSWORD`.
+
+`default-profile` may be omitted when the file defines exactly one profile.
 
 ## Environment variables
 

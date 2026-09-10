@@ -2,8 +2,8 @@
 title: "Users"
 status: synced
 author: ""
-last-modified: "2026-09-03T00:00:00.000Z"
-version: "1.1"
+last-modified: "2026-09-10T00:00:00.000Z"
+version: "1.2"
 ---
 
 # Users
@@ -26,6 +26,13 @@ What it needs:
 - **Stable, non-negotiable exit codes.** 0 success, 1 failure, 2 bad usage.
 - **A bundled skill** describing how to drive the tool, installable into the agent's own skills
   directory so the instructions ship with the version installed.
+- **Nothing to decide that it cannot observe.** Which machine to drive is not something any result
+  tells it, so it must not be asked. See [features/configuration.md](features/configuration.md).
+
+**This agent is not always a frontier model.** It is increasingly a 27B running locally, and that
+reader does not hold a long argument or notice that it has failed to follow one — it copies the
+nearest example and acts. Everything written for it is therefore ordered so the executable part
+comes first, and carries no example the reader cannot correctly generalise from.
 
 ### The developer integrating it
 

@@ -2,8 +2,8 @@
 title: "CLI"
 status: synced
 author: ""
-last-modified: "2026-09-05T12:40:00.000Z"
-version: "3.0"
+last-modified: "2026-09-10T00:00:00.000Z"
+version: "3.1"
 ---
 
 # CLI
@@ -15,21 +15,27 @@ The CLI is the interface the calling agent actually uses. Its contract is machin
 A **default command** means a bare action works alongside subcommands:
 
 ```bash
-use-computer click --x 120 --y 340 --use staging
-use-computer type --text "hello" --use staging
-use-computer key ctrl+s --use staging
-use-computer screenshot --use laptop
-use-computer windows --use laptop
-use-computer tree --use laptop
-use-computer tree --format json --use laptop
-use-computer click --role button --name "Invia" --use laptop
-use-computer set-value --id 0/2/1 --value "mario@example.com" --use laptop
-use-computer batch actions.json --use staging
+use-computer click --x 120 --y 340
+use-computer type --text "hello"
+use-computer key ctrl+s
+use-computer screenshot
+use-computer windows
+use-computer tree
+use-computer tree --format json
+use-computer click --role button --name "Invia"
+use-computer set-value --id 0/2/1 --value "mario@example.com"
+use-computer batch actions.json
 use-computer prune --keep 20
 use-computer config init
 use-computer config show
 use-computer skill install --scope project
 ```
+
+**No example carries `--use`, and that is deliberate.** These are the examples the bundled skill
+was written from, so an inconsistency here becomes an inconsistency in what the agent reads: a
+model copying the nearest example would invent a profile name for whatever machine it is running
+on. The bare form is the form that works on a normal installation — see
+[configuration.md](configuration.md) for how the profile is selected without it.
 
 ## Output contract
 
@@ -108,7 +114,7 @@ able to diagnose it.
 
 | Flag | Meaning |
 | --- | --- |
-| `--use <profile>` | Select a named profile from the config. |
+| `--use <profile>` | Select a named profile from the config. Needed only where several are defined. |
 | `--dry-run` | Resolve and log without performing. |
 | `--verify` | Enable change detection for the run. |
 | `--space <screenshot\|actuation>` | Coordinate space of the coordinates given. |

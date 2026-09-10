@@ -138,14 +138,82 @@ def test_a_missing_profile_is_a_clear_error(write_config: WriteConfig) -> None:
     assert "nope" in str(excinfo.value)
 
 
-def test_no_profile_at_all_says_what_to_set(
+SOLE_PROFILE = """
+[profiles.laptop]
+backend = "local"
+allow-local = true
+"""
+
+SOLE_PROFILE_NO_OPT_IN = """
+[profiles.laptop]
+backend = "local"
+"""
+
+TWO_PROFILES = """
+[profiles.laptop]
+backend = "local"
+allow-local = true
+
+[profiles.staging]
+backend = "vnc"
+host = "10.0.0.5"
+"""
+
+
+def test_a_single_declared_profile_needs_no_naming(write_config: WriteConfig) -> None:
+    """One option is not a choice, and the caller here usually cannot make one."""
+    write_config(SOLE_PROFILE)
+    resolved = load(environ={})
+    assert resolved.profile_name == "laptop"
+    assert resolved.profile.backend == "local"
+
+
+def test_a_profile_selected_by_counting_is_still_attributed(write_config: WriteConfig) -> None:
+    """Chosen by counting is fine; chosen invisibly is what gets found at the worst moment."""
+    write_config(SOLE_PROFILE)
+    entry = load(environ={}).values["default_profile"]
+    assert entry.value == "laptop"
+    assert entry.layer == "config"
+    assert entry.source is not None and entry.source.endswith("config.toml")
+
+
+def test_being_the_only_profile_grants_no_opt_in(write_config: WriteConfig) -> None:
+    """`allow-local` is a separate decision, and selection must not stand in for it."""
+    write_config(SOLE_PROFILE_NO_OPT_IN)
+    resolved = load(environ={})
+    assert resolved.profile_name == "laptop"
+    assert resolved.profile.allow_local is False
+
+
+def test_no_configuration_at_all_names_one_command(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     with pytest.raises(ConfigError) as excinfo:
         _ = load(environ={}).profile
-    assert "--use" in str(excinfo.value)
+    message = str(excinfo.value)
+    assert "config init" in message
+    assert "--use" not in message  # never a menu: an agent answers a menu by guessing
+
+
+def test_several_profiles_and_no_default_names_them_and_one_fix(
+    write_config: WriteConfig,
+) -> None:
+    write_config(TWO_PROFILES)
+    with pytest.raises(ConfigError) as excinfo:
+        _ = load(environ={}).profile
+    message = str(excinfo.value)
+    assert "laptop" in message and "staging" in message
+    assert "default-profile" in message
+    assert "config init" not in message  # a config exists; `init` would refuse anyway
+
+
+def test_a_config_declaring_no_profiles_says_so(write_config: WriteConfig) -> None:
+    write_config("delay = 0.5\n")
+    with pytest.raises(ConfigError) as excinfo:
+        _ = load(environ={}).profile
+    assert "no profiles" in str(excinfo.value)
 
 
 def test_a_bad_boolean_in_the_environment_names_the_variable(write_config: WriteConfig) -> None:

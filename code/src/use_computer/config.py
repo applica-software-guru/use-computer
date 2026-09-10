@@ -136,6 +136,10 @@ class ResolvedConfig(BaseModel):
     profile_name: str | None
     values: dict[str, ResolvedValue]
     warnings: tuple[str, ...] = ()
+    defined_profiles: tuple[str, ...] = Field(
+        default=(),
+        description="Every profile name any config file declares. What the refusal reports.",
+    )
 
     def get(self, field: str) -> Any:
         entry = self.values.get(field)
@@ -150,10 +154,7 @@ class ResolvedConfig(BaseModel):
     def profile(self) -> BackendProfile:
         """The selected profile, with every layer applied on top of it."""
         if self.profile_name is None:
-            raise ConfigError(
-                "no profile selected: pass --use <profile>, or set `default-profile` in "
-                f"{PROJECT_DIR}/{CONFIG_FILENAME}, or set {ENV_PREFIX}DEFAULT_PROFILE."
-            )
+            raise ConfigError(self._unselected())
         backend = self.get("backend")
         if backend is None:
             raise ConfigError(
@@ -169,6 +170,28 @@ class ResolvedConfig(BaseModel):
             password=self.get("password"),
             allow_local=bool(self.get("allow_local")),
             scale=self.get("scale"),
+        )
+
+    def _unselected(self) -> str:
+        """Why no profile was selected, as **one** instruction.
+
+        A menu of three alternatives is a question, and the caller here is usually an agent,
+        which answers a question about a profile by inventing a name. So the message branches on
+        what is actually true and names the single next move.
+        """
+        if not self.defined_profiles:
+            where = self.config_file or self.global_config_file
+            if where is None:
+                return "no configuration found; run `use-computer config init`"
+            return (
+                f"{where} defines no profiles; add a [profiles.<name>] section declaring a "
+                "`backend`"
+            )
+        names = ", ".join(self.defined_profiles)
+        where = self.config_file or self.global_config_file or f"{PROJECT_DIR}/{CONFIG_FILENAME}"
+        return (
+            f"several profiles are defined ({names}) and none is the default; "
+            f"set `default-profile` in {where}"
         )
 
     def show(self) -> dict[str, Any]:
@@ -324,6 +347,23 @@ def _env_layer(environ: dict[str, str]) -> tuple[dict[str, Any], dict[str, dict[
     return scalars, profiles
 
 
+def _declared_profiles(
+    layers: tuple[tuple[dict[str, Any], Layer, Path | None], ...],
+) -> dict[str, tuple[Layer, Path | None]]:
+    """Every profile name a config file declares, with the layer that declared it.
+
+    Lowest precedence first, so a name the project file also declares overwrites the global
+    one -- the same order the values themselves follow. A profile mentioned only by an
+    environment override is not declared: it has no `backend` and could not be opened.
+    """
+    declared: dict[str, tuple[Layer, Path | None]] = {}
+    for raw, layer, source in layers:
+        for name, entry in (raw.get("profiles") or {}).items():
+            if isinstance(entry, dict):
+                declared[name] = (layer, source)
+    return declared
+
+
 # --- Resolution --------------------------------------------------------------------------------
 
 
@@ -369,18 +409,37 @@ def load(
 
     env_raw, env_profiles = _env_layer(environ)
 
-    # Pass one: the profile name itself, resolved without a profile layer.
-    selected = profile or cli_values.get("profile")
-    if selected is None:
-        for candidate in (
-            env_raw.get("default_profile"),
-            dotenv_raw.get("default_profile"),
-            _normalise(project_raw).get("default_profile"),
-            _normalise(global_raw).get("default_profile"),
-        ):
+    declared = _declared_profiles(
+        ((global_raw, "global-config", global_file), (project_raw, "config", config_file))
+    )
+
+    # Pass one: the profile name itself, resolved without a profile layer. Where it came from
+    # is tracked here rather than reconstructed later, so `config show` reports what actually
+    # chose it.
+    selected: str | None = None
+    selected_layer: Layer = "cli"
+    selected_source: Path | None = None
+
+    explicit = profile or cli_values.get("profile")
+    if explicit:
+        selected = str(explicit)
+    else:
+        candidates: tuple[tuple[Any, Layer, Path | None], ...] = (
+            (env_raw.get("default_profile"), "env", None),
+            (dotenv_raw.get("default_profile"), "dotenv", dotenv_file),
+            (_normalise(project_raw).get("default_profile"), "config", config_file),
+            (_normalise(global_raw).get("default_profile"), "global-config", global_file),
+        )
+        for candidate, layer, source in candidates:
             if candidate:
-                selected = str(candidate)
+                selected, selected_layer, selected_source = str(candidate), layer, source
                 break
+
+    # A single declared profile is the profile. Nothing distinguishes one profile from another
+    # in any result the caller can read, so a choice with one option is not a choice -- and the
+    # caller most likely to be stopped by it is an agent, which cannot make it at all.
+    if selected is None and len(declared) == 1:
+        selected, (selected_layer, selected_source) = next(iter(declared.items()))
 
     # Pass two: every field, over the full stack.
     profile_raw: dict[str, Any] = {}
@@ -438,7 +497,11 @@ def load(
             )
     if selected:
         values["default_profile"] = values["default_profile"].model_copy(
-            update={"value": selected}
+            update={
+                "value": selected,
+                "layer": selected_layer,
+                "source": str(selected_source) if selected_source else None,
+            }
         )
 
     return ResolvedConfig(
@@ -448,6 +511,7 @@ def load(
         profile_name=selected,
         values=values,
         warnings=tuple(warnings),
+        defined_profiles=tuple(sorted(declared)),
     )
 
 

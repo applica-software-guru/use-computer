@@ -2,8 +2,8 @@
 title: "Agent Skill"
 status: synced
 author: ""
-last-modified: "2026-09-05T13:30:00.000Z"
-version: "4.1"
+last-modified: "2026-09-10T00:00:00.000Z"
+version: "5.0"
 ---
 
 # Agent Skill
@@ -40,20 +40,44 @@ A flag that carries a judgement must be described **where it exists**. `--via` i
 the element-only actions have no coordinate form and reject it, so presenting it as if every
 command took it hands the agent a usage error in the middle of a task.
 
+Saying the same thing in four places costs the smaller reader four times and teaches it once, so
+each idea is stated where it is needed and nowhere else.
+
 **A test asserts the skill's claims are real**, not that it is complete: every flag and command it
 mentions must exist, on the command it is claimed for. That is the direction that matters. A skill
 telling an agent to pass a removed flag is actively harmful; one that omits `collapse` is merely
 thin, and `--help` covers thin.
+
+## Who reads it
+
+Two readers, and they fail differently.
+
+A frontier model holds the whole argument at once and reasons by analogy from it. A 27B running
+locally — Qwen, Gemma, whatever is on the same desk — does not. It takes what is in front of it and
+acts, and when it has not followed the argument it does not say so: it emits a plausible command
+with a wrong flag.
+
+Neither reader is served by dropping the argument, because what is being taught **is** a judgement
+and a judgement cannot be tabulated. Both are served by **order**. An agent acts on what it reads
+first, so the executable procedure comes first and the reasoning follows it.
+
+This is also why the skill is **one file**. Splitting the procedure from the reasoning is the usual
+way to do progressive disclosure, and here it fails for the reader it would be for: a smaller model
+does not notice it is under-informed and go and open the second file. The judgement would end up
+behind a door that only the audience which does not need it ever opens, while the frontier model
+pays an extra read for material it was already getting.
 
 ## What it teaches
 
 The skill is the only reason any of this is reachable by the agent it was built for, so its
 content is part of the specification, not a README:
 
-1. **`windows`, then `tree`, then `screenshot`.** The opening decision procedure is: list the
-   windows, read the tree of the one you want, act on what you find, and reach for a screenshot and
-   ui-locator only when the tree cannot see the element. Order is instruction — an agent follows
-   what it reads first, and a `tree` of the wrong window costs more than the list would have.
+1. **The opening procedure, before anything else in the document.** Six numbered steps, executable
+   without reading further: `windows` for what is open and the `--window` value everything below
+   needs; `activate` to bring that window forward; `tree` for roles, names, ids and boxes; act on an
+   element by name; `tree` again to confirm; and a screenshot cropped to a node only when the tree
+   cannot see the thing. Order is instruction. A comparison table is the right *second* thing to
+   read and the wrong first, and a `tree` of the wrong window costs more than the list would have.
 2. **Both addressing modes**, with a worked example of each, and the explicit statement that pixel
    coordinates remain correct and supported.
 3. **`set-value` versus `type`**, because choosing wrong there fails silently in real applications.
@@ -93,6 +117,18 @@ content is part of the specification, not a README:
    region the platform does not describe. `?unexposed` names that region, it is the normal
    condition of a canvas, a map, a chart or a game, and it is the cue to switch to pixels **for
    that region only**.
+
+9. **Nothing the agent cannot decide.** `--use` names which machine and which backend, and no
+   result an agent can read tells `laptop` from `staging` — so the skill does not mention the flag
+   at all, in prose or in an example. An example carrying `--use laptop` is worse than no guidance:
+   a model that copies the nearest example invents a profile name for whatever machine it is
+   actually running on, and gets a warning and a refusal for a decision it should never have been
+   handed. Which profile to use is settled once, by whoever installed the tool — see
+   [configuration.md](configuration.md).
+
+   The skill says one thing about it, in the errors section: when the tool reports the machine is
+   not configured, **stop and tell the user**. Do not guess a profile name, and do not run
+   `config init` on somebody's machine to get past an error.
 
 `x-skill-version` bumps whenever that guidance changes, so `skill status` reports installed copies
 as outdated instead of leaving agents on stale instructions. The `description` line has to keep

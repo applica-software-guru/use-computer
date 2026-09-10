@@ -2,7 +2,7 @@
 name: use-computer
 description: Read and act on a GUI — the accessibility tree of what is on screen (roles, names, clickable boxes), then click, focus, toggle, expand, select, set a value, type, press keys, drag, scroll, screenshot. Locally or over VNC. Ask the tree first and use ui-locator's pixel coordinates only when the tree cannot see the element. Bring a window forward before aiming at it, and confirm what happened by re-reading, not by trusting the line.
 x-skill-id: use-computer
-x-skill-version: "6"
+x-skill-version: "7"
 ---
 
 # use-computer
@@ -10,6 +10,35 @@ x-skill-version: "6"
 You read and act on a screen through the `use-computer` CLI. It reads the accessibility tree the
 operating system already maintains, and it moves a real pointer and types real keystrokes. It does
 not decide *what* to do — you do.
+
+## Do this first
+
+Six steps. Run them in this order and most tasks are finished before you reach anything below.
+
+```bash
+use-computer windows                                  # 1. what is open
+use-computer activate --window "Conferma"             # 2. bring it forward
+use-computer tree --window "Conferma"                 # 3. what is in it
+use-computer click --role button --name "Invia" --window "Conferma"   # 4. act by name
+use-computer tree --window "Conferma"                 # 5. re-read to confirm
+use-computer screenshot --window "Conferma" --of 0/0/2   # 6. only if step 3 could not see it
+```
+
+1. **`windows`** — a dozen windows cost about 1.4 KB and give you the `--window` value every other
+   command needs. Make this call first.
+2. **`activate --window "..."`** — cheap, idempotent, a no-op when it is already in front.
+3. **`tree --window "..."`** — roles, names, ids, states and boxes for that window.
+4. **Act by name**, with no coordinates at all: `click`, `focus`, `set-value`, `select`, `toggle`,
+   `expand`. Keep `--window` on every one.
+5. **`tree` again.** A result line says what was *attempted*. The tree says what is now true.
+6. **Pixels only when the tree cannot see it** — `screenshot --of <id>` crops to one node, then
+   ask ui-locator where the thing is and click those pixels.
+
+**Do not start with a screenshot.** It costs a vision round trip and returns a coordinate that may
+be stale by the time you use it; the tree returns a name that still resolves.
+
+You do not choose a machine or a profile. That is settled on the installation, and if the tool
+says it is not configured, stop and say so — see [When it refuses](#when-it-refuses).
 
 ## Two ways to know what is on the screen
 
@@ -76,25 +105,18 @@ Three habits, and they cost almost nothing:
 
 ## The ladder
 
-Take the highest rung you can reach. Each one is cheaper, faster and more accurate than the one
-below it.
+Step 4 above is rung one. Take the highest rung you can reach: each is cheaper, faster and more
+accurate than the one below it.
 
-0. **`use-computer activate --window "..."`** — put the window you mean in front, before any
-   coordinate goes near it. Cheap, idempotent, and a no-op when it is already there.
-0. **`use-computer windows`** — what is open. A dozen windows cost about 1.4 KB; a single
-   window's tree costs fifteen times that. Make this call first: it gives you the `--window` value
-   everything else needs, and tells you which window `focused` will resolve to.
-1. **`use-computer tree --window "..."`** — ask the OS what is in that window. You get roles, names
-   and boxes. Then act on an element by name:
-   `use-computer click --role button --name "Invia"`.
+1. **Element, through the platform API** — `click --role button --name "Invia"`. No coordinates,
+   so nothing to aim and no scale to get wrong.
 2. **A coordinate from the tree** — the element is there but the platform will not operate it.
    `click` falls back to its centre on its own and tells you it did.
-3. **Vision** — the tree cannot see it. Take a screenshot, ask ui-locator where the thing is, and
-   click those pixels.
+3. **Vision** — the tree cannot see it. Screenshot, ask ui-locator where the thing is, and click
+   those pixels.
 
-**Do not start with a screenshot.** Start with `tree`. A screenshot costs you a vision round trip
-and gives you a coordinate that may be stale by the time you use it; the tree gives you a name
-that still resolves.
+Rung three is the floor the whole ladder stands on. It is not going anywhere; it is simply not the
+first thing to try.
 
 ## Contract
 
@@ -112,8 +134,6 @@ noticing.
 `use-computer <command> --help` lists every flag. This document covers the ones that carry a
 judgement; `--help` covers the rest.
 
-Always pass `--use <profile>` unless a default profile is configured.
-
 ## Coordinates: the thing that goes wrong
 
 A screenshot on a HiDPI display is larger than the space the OS clicks in. Coordinates from
@@ -127,7 +147,7 @@ and read `screen` from the result; do not compute a factor and retry with differ
 ## Listing the windows
 
 ```bash
-use-computer windows --use laptop
+use-computer windows
 ```
 
 ```
@@ -254,14 +274,15 @@ on the same id. The loop is **`tree` to locate, `screenshot --of` to look, `clic
 Two unnamed fields are also told apart by where they sit — a message box is wide and at the bottom,
 a search box narrow and at the top — and by focus: click one, re-read the tree, see which now says
 `!focused`.
-- **`root: null`** with a `reason` means there is no tree here: `unavailable` (no provider, or a
-  vnc profile), `denied` (permission), `empty` (the app exposes nothing). A `screenshot` path comes
-  back with it — that is your cue to switch to ui-locator.
+
+**`root: null`** with a `reason` means there is no tree here at all: `unavailable` (no provider, or
+a vnc profile), `denied` (permission), `empty` (the app exposes nothing). A `screenshot` path comes
+back with it — that is your cue to switch to ui-locator.
 
 ## Acting on an element
 
 ```bash
-use-computer click --role button --name "Invia" --use laptop
+use-computer click --role button --name "Invia"
 use-computer click --id 0/2/1/3 --role button --name "Invia"   # id + fingerprint
 use-computer focus --role text --name "Destinatario"
 use-computer set-value --role text --name "Destinatario" --value "mario@example.com"
@@ -332,7 +353,7 @@ how a click aimed at a canvas ends up selecting text in a terminal.
 `focus` is how you decide what that is.
 
 `type` sends literal text. `ctrl+a` given to `type` types seven characters — use `key` for
-shortcuts. `type` and `key` go to whatever holds focus; they take no element. Use `focus` first.
+shortcuts.
 
 Give an action a coordinate **or** an element, never both.
 
@@ -353,7 +374,7 @@ echo '[
   {"action":"click","x":120,"y":340,"verify":true},
   {"action":"type","text":"hello","delay":0.2},
   {"action":"key","combo":"enter"}
-]' | use-computer - --use staging
+]' | use-computer -
 ```
 
 With elements, a whole interaction carries no coordinates at all — and the closing `tree` hands
@@ -365,7 +386,7 @@ echo '[
   {"action":"type","text":"mario@example.com"},
   {"action":"click","role":"button","name":"Invia"},
   {"action":"tree"}
-]' | use-computer - --use laptop
+]' | use-computer -
 ```
 
 Action names take either spelling — `set-value` or `set_value`, `double-click` or `double_click` —
@@ -389,10 +410,22 @@ Read the file when you actually need to look at the screen. Do not ask for the p
 a batch of verified clicks would otherwise bury your context in base64, which is why that option
 does not exist.
 
-## Verify — how you know it worked, and what the screen looks like now
+They go in the project, in `.use-computer/screens/`, which the tool keeps out of git for you.
+Without a project, the XDG data directory. A run names the directory once and then just filenames.
 
-A click that lands on nothing looks exactly like a click that worked. With `--verify` (or
-`"verify": true` on one action) each action reports:
+```bash
+use-computer prune                # remove them
+use-computer prune --dry-run      # say what would go
+use-computer prune --keep 20      # leave the most recent 20
+```
+
+`prune` only ever removes files this tool wrote, and never the directory. Anything else in there is
+counted and left alone.
+
+## Verify — what the screen looks like now
+
+Step 5 of the procedure is how you confirm an **element** action: re-read the tree. `--verify` is
+for the other case — a coordinate, where there is no node to re-read. Each action then reports:
 
 ```
 click at (200, 200) — changed 604x312 at 40,120 — 41 ms
@@ -409,28 +442,9 @@ follow a verified action with a `screenshot` call. That is the round trip verify
   click the same pixel twice.** But check the obvious first: was the right window in front?
 - A box much smaller than the change you intended is the same signal. A click meant to open a
   dialog that reports `12x18 at 1904,8` moved a clock, not a dialog.
-- An action performed through the accessibility API (`"via": "action"`) moves no pointer and paints
-  no hover state, so it changes fewer pixels than the same click would. A small `magnitude` there
-  is **not** failure. When you acted on an element, re-run `tree` instead: it tells you *what*
-  changed, not merely that something did.
-- `changed: true` with a tiny `magnitude` in a corner → a clock or a caret, not a response.
 
 Verification costs two screenshots per action, so use it on the actions whose effect you need
 to confirm, not on every one.
-
-## Where the pictures go, and getting rid of them
-
-Inside the project, in `.use-computer/screens/`, which the tool keeps out of git for you. Without a
-project, the XDG data directory. A run names the directory once and then just filenames.
-
-```bash
-use-computer prune                # remove them
-use-computer prune --dry-run      # say what would go
-use-computer prune --keep 20      # leave the most recent 20
-```
-
-`prune` only ever removes files this tool wrote, and never the directory. Anything else in there is
-counted and left alone.
 
 ## Before you act on something risky
 
@@ -459,6 +473,10 @@ of an element action is also the cheapest way to check a selector is unambiguous
   ambiguous, `windows` shows **no** `*` at all rather than a guess — an empty column is the
   answer, not a missing one.
 - **`BackendNotAvailableError`** — the extra is not installed. The message names it.
+- **The machine is not configured** — `no configuration found`, or several profiles and no
+  default. **Stop and tell the user what the message said.** Do not invent a profile name, and do
+  not run `config init` on somebody's machine to get past it. Which machine this tool drives is
+  their decision, not yours, and nothing you can read tells you the answer.
 - **Local backend not enabled** — the `local` backend controls the user's own machine and needs
   an explicit opt-in. Tell the user to set `allow-local = true` in the profile; do not work
   around it.
@@ -468,15 +486,6 @@ of an element action is also the cheapest way to check a selector is unambiguous
 
 ## Configuration
 
-`use-computer config show` prints every resolved value, the layer it came from, its source and the
-exact environment variable that would override it, as aligned lines. Run it first when a profile behaves unexpectedly.
-
-If there is no config at all, you can create one without a human:
-
-```bash
-use-computer config init --backend vnc --host 10.0.0.5 --profile staging
-```
-
-It refuses to overwrite an existing config, and it will not enable the local backend for you —
-that opt-in is the user's to give. After writing, it opens the backend and reports the screen and
-its scale; a failed probe means the config is on disk but wrong.
+You do not normally touch this. `use-computer config show` prints every resolved value, the layer
+it came from, its source and the exact environment variable that would override it, as aligned
+lines — run it when a profile behaves unexpectedly.
