@@ -310,14 +310,15 @@ class AxProvider:
             return str(value)
         return None
 
-    def _build(self, element: Any, node_id: str, depth: int) -> UINode:
+    def _build(self, element: Any, node_id: str, depth: int, box: Box | None = None) -> UINode:
         self._index[node_id] = element
+        own_box = box if box is not None else self._box(element)
         children: tuple[UINode, ...] = ()
         if depth > 0:
             raw = self._attr(element, "AXChildren") or []
             children = tuple(
-                self._build(child, f"{node_id}/{index}", depth - 1)
-                for index, child in enumerate(raw)
+                self._build(child, f"{node_id}/{index}", depth - 1, child_box)
+                for index, (child, child_box) in enumerate(self._ordered(raw))
             )
         title = self._attr(element, "AXTitle") or self._attr(element, "AXDescription")
         return UINode(
@@ -327,9 +328,24 @@ class AxProvider:
             value=self._value(element),
             states=self._states(element),
             actions=self._actions(element),
-            box=self._box(element),
+            box=own_box,
             children=children,
         )
+
+    def _ordered(self, children: list[Any]) -> list[tuple[Any, Box]]:
+        """`AXChildren` in a fixed, position-based order.
+
+        Not guaranteed to come back the same way twice: measured on Calculator, pressing one
+        button reshuffled its siblings' `AXChildren` order, though none of them had moved on
+        screen. An id is a path built from this order, and a caller that reads a tree and then
+        acts on one of its ids across a separate call has no other snapshot to check it against --
+        so the order has to depend on where things are, which does not change, rather than on an
+        internal enumeration, which can (BUG-020). `sort` is stable, so children with no position
+        (closed menus, anything AX reports as 0,0,0,0) keep the relative order they already had.
+        """
+        boxed = [(child, self._box(child)) for child in children]
+        boxed.sort(key=lambda pair: (pair[1].y, pair[1].x))
+        return boxed
 
     # --- acting ------------------------------------------------------------------------------
 
@@ -352,15 +368,39 @@ class AxProvider:
         return None
 
     def activate(self, window_id: str) -> bool:
-        """macOS windows do accept a raise of their own: AXRaise."""
+        """macOS windows do accept a raise of their own: AXRaise.
+
+        AXRaise only orders a window within its own application -- it does not make that
+        application the frontmost one, so a still-frontmost application keeps covering the window
+        it just "raised" (BUG-018). Making the owning process frontmost is a separate call, tried
+        first since it is the one a caller actually needs.
+        """
         element = self._index.get(window_id)
         if element is None:
             return False
+        self._activate_owner(element)
         try:
             status = self._api.AXUIElementPerformAction(element, "AXRaise")
         except Exception:
             return False
         return bool(status == 0)
+
+    def _activate_owner(self, element: Any) -> None:
+        """Best effort: make the window's own application the frontmost one.
+
+        Failing here is not fatal -- AXRaise still runs, and still reorders the window within its
+        own application -- so exceptions are swallowed the way the rest of this provider treats a
+        platform call that would rather be skipped than crash the action.
+        """
+        try:
+            code, pid = self._api.AXUIElementGetPid(element, None)
+            if code != 0:
+                return
+            app = self._appkit.NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
+            if app is not None:
+                app.activateWithOptions_(self._appkit.NSApplicationActivateIgnoringOtherApps)
+        except Exception:
+            pass
 
     def perform(self, node_id: str, action: str, value: str | None) -> bool:
         element = self._index.get(node_id)
