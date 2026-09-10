@@ -179,16 +179,16 @@ class ResolvedConfig(BaseModel):
         which answers a question about a profile by inventing a name. So the message branches on
         what is actually true and names the single next move.
         """
+        found: Path | None = self.config_file or self.global_config_file
         if not self.defined_profiles:
-            where = self.config_file or self.global_config_file
-            if where is None:
+            if found is None:
                 return "no configuration found; run `use-computer config init`"
             return (
-                f"{where} defines no profiles; add a [profiles.<name>] section declaring a "
+                f"{found} defines no profiles; add a [profiles.<name>] section declaring a "
                 "`backend`"
             )
         names = ", ".join(self.defined_profiles)
-        where = self.config_file or self.global_config_file or f"{PROJECT_DIR}/{CONFIG_FILENAME}"
+        where = found if found is not None else f"{PROJECT_DIR}/{CONFIG_FILENAME}"
         return (
             f"several profiles are defined ({names}) and none is the default; "
             f"set `default-profile` in {where}"
