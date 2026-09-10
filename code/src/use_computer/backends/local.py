@@ -28,6 +28,13 @@ DOUBLE_CLICK_GAP = 0.08
 #: Steps a drag is interpolated over, so the application sees movement rather than a teleport.
 DRAG_STEPS = 24
 
+#: macOS warps the pointer asynchronously: a press posted right after `position` is set can still
+#: be stamped with the point the pointer is *leaving*, because the window server has not adopted
+#: the new one yet. Measured: with no wait at all the stamped location was still the old one; a
+#: two-digit number of milliseconds was consistently enough. This backend is the only place that
+#: needs it -- a VNC server adopts a move synchronously with the packet that requested it.
+MACOS_MOVE_SETTLE = 0.03
+
 
 class LocalBackend:
     """Drives this machine's display."""
@@ -96,6 +103,7 @@ class LocalBackend:
     def click(self, x: int | None, y: int | None, button: MouseButton, count: int) -> None:
         if x is not None and y is not None:
             self.move(x, y)
+            _settle_after_move()
         pynput_button = self._button(button)
         for index in range(count):
             if index:
@@ -107,6 +115,7 @@ class LocalBackend:
     def drag(self, from_x: int, from_y: int, to_x: int, to_y: int, button: MouseButton) -> None:
         pynput_button = self._button(button)
         self.move(from_x, from_y)
+        _settle_after_move()
         self._mouse.press(pynput_button)
         try:
             for step in range(1, DRAG_STEPS + 1):
@@ -124,6 +133,7 @@ class LocalBackend:
     ) -> None:
         if x is not None and y is not None:
             self.move(x, y)
+            _settle_after_move()
         dx, dy = _scroll_vector(amount, direction)
         self._mouse.scroll(dx, dy)
 
@@ -163,6 +173,16 @@ class LocalBackend:
                 return name
             raise ActionFailedError(f"the local backend has no mapping for key {name!r}")
         return getattr(self._key_module.Key, attribute)
+
+
+def _settle_after_move() -> None:
+    """Give macOS a moment to adopt a pointer warp before the next event is stamped with it.
+
+    Only macOS needs this -- BUG-017. `sys.platform` rather than a capability check: the race is
+    a property of the OS receiving the event, not of anything this process can detect from here.
+    """
+    if sys.platform == "darwin":  # pragma: no cover - platform specific
+        time.sleep(MACOS_MOVE_SETTLE)
 
 
 def _scroll_vector(amount: int, direction: ScrollDirection) -> tuple[int, int]:
