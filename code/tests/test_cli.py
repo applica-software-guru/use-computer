@@ -125,6 +125,32 @@ def test_a_batch_reads_stdin(
     assert backend.calls == [("key", "ctrl+s")]
 
 
+def test_a_batch_survives_the_byte_order_mark_a_windows_shell_adds(
+    runner: CliRunner,
+    write_config: WriteConfig,
+    backend: FakeBackend,
+) -> None:
+    """`echo '[...]' | use-computer -` is the form the README teaches, and in PowerShell it
+    arrives with a BOM in front -- which took the whole batch down as "not a valid action list"
+    over a character nobody typed."""
+    write_config(CONFIG)
+    payload = "﻿" + json.dumps([{"action": "key", "combo": "ctrl+s"}])
+    result = runner.invoke(app, ["batch", "-"], input=payload, catch_exceptions=False)
+    assert result.exit_code == EXIT_OK
+    assert backend.calls == [("key", "ctrl+s")]
+
+
+def test_a_batch_file_survives_it_too(
+    runner: CliRunner, write_config: WriteConfig, backend: FakeBackend, tmp_path: Path
+) -> None:
+    write_config(CONFIG)
+    actions = tmp_path / "actions.json"
+    # utf-8-sig is what Notepad and PowerShell's own redirection write.
+    actions.write_text(json.dumps([{"action": "key", "combo": "ctrl+s"}]), encoding="utf-8-sig")
+    assert invoke(runner, "batch", str(actions)).exit_code == EXIT_OK
+    assert backend.calls == [("key", "ctrl+s")]
+
+
 def test_a_malformed_batch_exits_two(
     runner: CliRunner,
     write_config: WriteConfig,
@@ -581,7 +607,9 @@ def test_a_batch_names_the_screenshot_directory_once(
     assert "screenshots in " in out.split("\n")[-2]
     for line in out.split("\n"):
         if line.startswith("  ") and line.strip().endswith(".png"):
-            assert "/" not in line  # a filename, because the directory was already named
+            # A filename, because the directory was already named. Compared against the name
+            # itself rather than searched for a separator: "/" is not the one Windows writes.
+            assert line.strip() == Path(line.strip()).name
 
 
 def test_a_single_screenshot_keeps_its_whole_path(
@@ -590,7 +618,10 @@ def test_a_single_screenshot_keeps_its_whole_path(
     # Nothing to save with one file, and an indirection to read would cost more than it returns.
     write_config(CONFIG)
     result = invoke(runner, "screenshot")
-    assert strip_ansi(result.stdout).split("\n")[0].startswith("/")
+    # Absolute, rather than starting with "/": keeping the whole path is the point, and on
+    # Windows a whole path starts with a drive letter. The size follows it on the same line.
+    reported = strip_ansi(result.stdout).split("\n")[0].rsplit(" ", 1)[0]
+    assert Path(reported).is_absolute(), reported
     assert "screenshots in " not in strip_ansi(result.stdout)
 
 

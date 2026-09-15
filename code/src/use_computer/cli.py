@@ -141,7 +141,12 @@ DryRunOption = Annotated[
 VerifyOption = Annotated[
     bool, typer.Option("--verify", help="Compare the screen before and after each action.")
 ]
-VerboseOption = Annotated[int, typer.Option("-v", count=True, help="Diagnostics on stderr.")]
+VerboseOption = Annotated[
+    # Counted, not given a number: `-v 2` leaves the 2 behind as an extra argument, and the
+    # metavar click prints for a count option says otherwise all by itself.
+    int,
+    typer.Option("-v", count=True, help="Diagnostics on stderr. Repeat for more: -vv."),
+]
 #: Text is the output. JSON is what you ask for, and it is never inferred from isatty(): agents
 #: run under a pty often enough that switching format on them would fail as a parse error far
 #: from its cause, on the caller least able to diagnose it.
@@ -949,7 +954,7 @@ def batch(
     verbose: VerboseOption = 0,
 ) -> None:
     """Run a batch of actions over one connection."""
-    raw = sys.stdin.read() if source == "-" else _read_file(source)
+    raw = _read_stdin() if source == "-" else _read_file(source)
     try:
         payload = normalise_action_names(json.loads(raw))
         # Named before the union gets a chance: its own error is four hundred characters listing
@@ -975,10 +980,22 @@ def batch(
     _run(actions, config, verbose, fmt=format)
 
 
+def _read_stdin() -> str:
+    """The piped action list, with any byte order mark taken off the front.
+
+    A BOM is what an ordinary Windows shell puts there: `echo '[...]' | use-computer -`, the
+    form the README teaches, arrives with one and `json.loads` refuses the whole batch over a
+    character nobody typed. `utf-8-sig` is the same decoder applied to a file for the same
+    reason; on stdin the text has already been decoded, so the mark comes off as a character.
+    """
+    return sys.stdin.read().lstrip("\ufeff")
+
+
 def _read_file(source: str) -> str:
     path = Path(source)
     try:
-        return path.read_text(encoding="utf-8")
+        # utf-8-sig, not utf-8: a JSON file written by PowerShell or Notepad starts with a BOM.
+        return path.read_text(encoding="utf-8-sig")
     except OSError as exc:
         _say("[red]error:[/red] cannot read {source}: {exc}", source=source, exc=exc)
         raise typer.Exit(EXIT_USAGE) from exc

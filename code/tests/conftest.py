@@ -48,6 +48,9 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[No
     # os.path.expanduser, but a patched Path.home does not reach expanduser() at all -- and a
     # path like "~/shots" resolves through the latter.
     monkeypatch.setenv("HOME", str(home))
+    # And USERPROFILE, because that is the variable expanduser reads on Windows: HOME alone left
+    # "~/shots" resolving to the real home while Path.home() answered with the temporary one.
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     yield
 

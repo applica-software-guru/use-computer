@@ -33,12 +33,13 @@ class UiaProvider:
     # --- reading -----------------------------------------------------------------------------
 
     def windows(self) -> list[WindowInfo]:
+        foreground = self._foreground()
         found: list[WindowInfo] = []
-        for index, window in enumerate(self._auto.GetRootControl().GetChildren()):
+        for window, handle in self._top_level():
             try:
                 found.append(
                     WindowInfo(
-                        id=f"0/{index}",
+                        id=self._window_id(handle),
                         title=window.Name or None,
                         role=roles.uia_role(window.ControlTypeName or ""),
                         # UI Automation reports the process id and not its name, and turning one
@@ -47,12 +48,32 @@ class UiaProvider:
                         app=None,
                         pid=int(window.ProcessId),
                         box=self._box(window),
-                        active=bool(window.HasKeyboardFocus),
+                        # The window manager's answer, not the window's own flag: a top-level
+                        # element reports `HasKeyboardFocus` only while the focus sits on the
+                        # element itself, which for every XAML application -- Calculator,
+                        # Settings, anything modern -- it never does. The flag marked nothing
+                        # active, so `--window focused` had no answer and the default `tree`
+                        # reported the whole desktop as having no tree at all.
+                        active=handle == foreground if foreground else self._focused(window),
                     )
                 )
             except Exception:
                 continue
         return found
+
+    def _foreground(self) -> int:
+        """The handle of the one window the system says is in front, or 0 if it will not say."""
+        try:
+            return int(self._auto.GetForegroundWindow())
+        except Exception:
+            return 0
+
+    def _focused(self, control: Any) -> bool:
+        """The per-window flag, kept only as the fallback for a desktop with no foreground."""
+        try:
+            return bool(control.HasKeyboardFocus)
+        except Exception:
+            return False
 
     def snapshot(self, scope: TreeScope, depth: int) -> UINode:
         self._index = {}
@@ -69,12 +90,44 @@ class UiaProvider:
         # A title has already been resolved to an id above the Protocol, so only an id or a pid
         # reaches a provider. Keeping the matching in one place is what stops three platforms
         # drifting apart on it.
-        for index, window in enumerate(root.GetChildren()):
-            if scope.kind is TreeScopeKind.ID and scope.value == f"0/{index}":
+        for window, handle in self._top_level():
+            if scope.kind is TreeScopeKind.ID and scope.value == self._window_id(handle):
                 return window
             if scope.kind is TreeScopeKind.PID and str(window.ProcessId) == scope.value:
                 return window
         raise UITreeUnavailableError(f"no window matches {scope.value!r}.")
+
+    def _top_level(self) -> list[tuple[Any, int]]:
+        """The desktop's windows, each with its own handle, in a fixed order.
+
+        `GetChildren` hands them back in Z-order, which changes every time anything comes forward
+        -- `activate` itself does -- and a window opening or closing shifts the rest either way.
+        An index into that list is therefore an id that names a different window a second later,
+        and a caller that reads `windows` and then acts on one of its ids has nothing else to
+        check it against: it silently activates, reads or clicks the wrong window. The handle is
+        the window's own identity for as long as it exists, so it *is* the id rather than
+        something the id is derived from. Ordering by it as well only keeps the listing steady
+        between two reads.
+
+        A child with no handle is left out: there is no id that would still name it next time,
+        and nothing can be brought forward or read without one.
+        """
+        try:
+            children = self._auto.GetRootControl().GetChildren()
+        except Exception:
+            return []
+        found = [(child, self._handle(child)) for child in children]
+        return sorted((pair for pair in found if pair[1]), key=lambda pair: pair[1])
+
+    @staticmethod
+    def _window_id(handle: int) -> str:
+        return f"0/{handle}"
+
+    def _handle(self, control: Any) -> int:
+        try:
+            return int(control.NativeWindowHandle)
+        except Exception:
+            return 0
 
     def _top_window(self, control: Any) -> Any:
         """Walk up to the window the focused control lives in."""
@@ -175,7 +228,7 @@ class UiaProvider:
     # --- acting ------------------------------------------------------------------------------
 
     def active_window(self) -> ActiveWindow | None:
-        """This platform's own `active` flag is already per window, so there is nothing to add."""
+        """`windows` already asks the window manager itself, so there is no hint left to add."""
         return None
 
     def activate(self, window_id: str) -> bool:
