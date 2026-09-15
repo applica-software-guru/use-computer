@@ -2,7 +2,7 @@
 name: use-computer
 description: Read and act on a GUI — the accessibility tree of what is on screen (roles, names, clickable boxes), then click, focus, toggle, expand, select, set a value, type, press keys, drag, scroll, screenshot. Locally or over VNC. Ask the tree first and use ui-locator's pixel coordinates only when the tree cannot see the element. Bring a window forward before aiming at it, and confirm what happened by re-reading, not by trusting the line.
 x-skill-id: use-computer
-x-skill-version: "7"
+x-skill-version: "8"
 ---
 
 # use-computer
@@ -480,8 +480,11 @@ of an element action is also the cheapest way to check a selector is unambiguous
 - **Local backend not enabled** — the `local` backend controls the user's own machine and needs
   an explicit opt-in. Tell the user to set `allow-local = true` in the profile; do not work
   around it.
-- **Permission denied** — macOS Accessibility or Screen Recording. The message names which. Only
-  the user can grant it.
+- **Permission denied** — the message names which permission. On macOS, Accessibility or Screen
+  Recording: only the user can grant it. On Windows, `Elevation`: the window belongs to a process
+  running as administrator, and Windows lets only another elevated process read or drive it.
+  Nothing you can do from here gets past it — `windows` still lists that window, but its tree and
+  every action on it stay refused. Tell the user, and work on a window that is not elevated.
 - **Coordinate space error** — see above. Take a screenshot; do not guess a factor.
 
 ## Configuration

@@ -14,9 +14,26 @@ from typing import Any
 
 import pytest
 
+from use_computer.accessibility import roles
 from use_computer.accessibility.uia import UiaProvider
-from use_computer.errors import UITreeUnavailableError
+from use_computer.errors import PermissionDeniedError, UITreeUnavailableError
 from use_computer.tree import TreeScope, TreeScopeKind
+
+
+class Refused(Exception):
+    """What Windows raises when the refusal is about who is asking.
+
+    comtypes puts the hresult on the exception as `hresult` and repeats it in `args`; this
+    carries both, so the check cannot pass by reading the one the real error does not have.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(-2147024891, "Access is denied.")
+        self.hresult = -2147024891
+
+
+class Unsupported(Exception):
+    """What a control raises when it simply does not do that. Not a permission problem."""
 
 
 class FakeControl:
@@ -31,7 +48,9 @@ class FakeControl:
         handle: int = 0,
         focused: bool = False,
         children: list[FakeControl] | None = None,
+        refuse_children: bool = False,
     ) -> None:
+        self.refuse_children = refuse_children
         self.Name = name
         self.ControlTypeName = kind
         self.ProcessId = pid
@@ -41,6 +60,8 @@ class FakeControl:
         self._children = children or []
 
     def GetChildren(self) -> list[FakeControl]:
+        if self.refuse_children:
+            raise Refused()
         return list(self._children)
 
 
@@ -156,6 +177,73 @@ def test_an_id_that_names_no_window_is_an_error_and_not_a_neighbour(wanted: str)
 def test_a_child_with_no_handle_is_left_out_because_no_id_would_name_it_twice() -> None:
     made = desktop([FakeControl("Calculator", handle=30), FakeControl("nameless", handle=0)])
     assert [entry.title for entry in made.windows()] == ["Calculator"]
+
+
+def raising(exc: type[Exception]) -> Any:
+    def _call() -> Any:
+        raise exc()
+
+    return _call
+
+
+def acting_on(control: Any) -> UiaProvider:
+    """A provider with that control already indexed, as a snapshot would leave it."""
+    made = desktop([control])
+    made._index = {"0": control}
+    return made
+
+
+def test_a_window_that_will_not_be_read_says_that_elevation_is_why() -> None:
+    """Windows refuses UI Automation across integrity levels, so an elevated application reads
+    as one that exposes nothing at all -- and nobody is told to run elevated."""
+    made = desktop([FakeControl("Task Manager", handle=30, refuse_children=True)])
+    with pytest.raises(PermissionDeniedError, match="Elevation"):
+        made.snapshot(TreeScope(kind=TreeScopeKind.ID, value="0/30"), depth=2)
+
+
+def test_a_refused_pattern_is_not_a_control_that_does_not_do_that() -> None:
+    control: Any = FakeControl("Save", kind="ButtonControl", handle=30)
+    control.GetInvokePattern = raising(Refused)
+    with pytest.raises(PermissionDeniedError, match="Elevation"):
+        acting_on(control).perform("0", roles.CLICK, None)
+
+
+def test_a_refused_invoke_is_not_a_click_that_merely_did_not_go_through() -> None:
+    control: Any = FakeControl("Save", kind="ButtonControl", handle=30)
+    control.GetInvokePattern = lambda: SimpleNamespace(Invoke=raising(Refused))
+    with pytest.raises(PermissionDeniedError, match="Elevation"):
+        acting_on(control).perform("0", roles.CLICK, None)
+
+
+def test_an_ordinary_failure_is_still_only_a_false() -> None:
+    """The refusal is the exception. Everything else means the control does not do that."""
+    control: Any = FakeControl("Save", kind="ButtonControl", handle=30)
+    control.GetInvokePattern = lambda: SimpleNamespace(Invoke=raising(Unsupported))
+    assert acting_on(control).perform("0", roles.CLICK, None) is False
+
+
+def test_a_refused_raise_says_so_rather_than_falling_back_to_focusing_something() -> None:
+    control: Any = FakeControl("Task Manager", handle=30)
+    control.SetActive = raising(Refused)
+    with pytest.raises(PermissionDeniedError, match="Elevation"):
+        acting_on(control).activate("0")
+
+
+def test_a_control_with_no_raise_of_its_own_still_just_returns_false() -> None:
+    control: Any = FakeControl("Calculator", handle=30)
+    control.SetActive = raising(Unsupported)
+    assert acting_on(control).activate("0") is False
+
+
+def test_a_window_you_cannot_read_is_still_a_window_you_can_see() -> None:
+    """The listing is how the caller finds out it is there at all, so it never refuses."""
+    made = desktop(
+        [
+            FakeControl("Task Manager", handle=30, refuse_children=True),
+            FakeControl("Calculator", handle=10),
+        ]
+    )
+    assert [entry.title for entry in made.windows()] == ["Calculator", "Task Manager"]
 
 
 def test_one_window_that_will_not_answer_costs_its_own_entry_never_the_listing() -> None:

@@ -10,7 +10,7 @@ from typing import Any
 
 from use_computer.accessibility import roles
 from use_computer.accessibility.base import require
-from use_computer.errors import UITreeUnavailableError
+from use_computer.errors import PermissionDeniedError, UITreeUnavailableError
 from use_computer.tree import (
     ActiveWindow,
     Box,
@@ -18,6 +18,17 @@ from use_computer.tree import (
     TreeScopeKind,
     UINode,
     WindowInfo,
+)
+
+#: What Windows answers when the refusal is about who is asking: E_ACCESSDENIED, and the Win32
+#: error it wraps. UIPI stops a process from reading or driving the UI of a process running at a
+#: higher integrity level, so an ordinary session cannot touch anything started as administrator.
+ACCESS_DENIED = frozenset({-2147024891, 5})  # 0x80070005, ERROR_ACCESS_DENIED
+
+ELEVATION_HINT = (
+    "The window belongs to a process running as administrator, and Windows lets only another "
+    "elevated process read or drive it. Run use-computer from an elevated terminal, or act on a "
+    "window that is not elevated."
 )
 
 
@@ -176,8 +187,34 @@ class UiaProvider:
             return None
         try:
             return getter()
-        except Exception:
+        except Exception as exc:
+            self._refuse(exc)
             return None
+
+    @staticmethod
+    def _refuse(exc: BaseException) -> None:
+        """Turn Windows' own refusal into the error that names it, and let anything else pass.
+
+        Every other failure here means "this control does not do that", which the caller reports
+        as an action that did not go through. A refusal is a different fact: the control does do
+        that, and would have, for a process allowed to ask. Reported as the former it looks like
+        an application that exposes nothing -- the tree comes back empty, the click returns false
+        -- and the one thing that would fix it, running elevated, is the one thing nobody is
+        told. macOS has said `Accessibility` for this since the beginning; Windows said nothing.
+        """
+        if isinstance(exc, PermissionDeniedError):
+            # Already named, on the way out through an `except Exception` that would otherwise
+            # swallow it and report the control as one that does not do that after all.
+            raise exc
+        for attribute in ("hresult", "winerror"):
+            code = getattr(exc, attribute, None)
+            if isinstance(code, int) and code in ACCESS_DENIED:
+                raise PermissionDeniedError("Elevation", ELEVATION_HINT) from exc
+        args = getattr(exc, "args", ())
+        if args and isinstance(args[0], int) and args[0] in ACCESS_DENIED:
+            raise PermissionDeniedError("Elevation", ELEVATION_HINT) from exc
+        if isinstance(exc, PermissionError):
+            raise PermissionDeniedError("Elevation", ELEVATION_HINT) from exc
 
     def _actions(self, control: Any) -> tuple[str, ...]:
         found = {roles.FOCUS}
@@ -208,7 +245,8 @@ class UiaProvider:
         if depth > 0:
             try:
                 raw = control.GetChildren()
-            except Exception:
+            except Exception as exc:
+                self._refuse(exc)
                 raw = []
             children = tuple(
                 self._build(child, f"{node_id}/{index}", depth - 1)
@@ -238,8 +276,10 @@ class UiaProvider:
             return False
         try:
             return bool(control.SetActive())
-        except Exception:
-            # Not every control exposes it, and the caller has a working fallback.
+        except Exception as exc:
+            # Not every control exposes it, and the caller has a working fallback -- but a
+            # refusal is not that, and the fallback cannot help with it either.
+            self._refuse(exc)
             return False
 
     def perform(self, node_id: str, action: str, value: str | None) -> bool:
@@ -280,7 +320,8 @@ class UiaProvider:
                     return False
                 pattern.Select()
                 return True
-        except Exception:
+        except Exception as exc:
+            self._refuse(exc)
             return False
         # show_menu has no UIA pattern: there is no way to ask for it, so say so rather than
         # synthesising a right-click and calling it the same thing.
