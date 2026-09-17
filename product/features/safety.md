@@ -3,7 +3,7 @@ title: "Safety"
 status: synced
 author: ""
 last-modified: "2026-09-17T00:00:00.000Z"
-version: "1.4"
+version: "1.5"
 ---
 
 # Safety
@@ -52,6 +52,24 @@ keyboard receives it, and nothing in between is ever printed. See
 **There is no command that prints a secret, and its absence is the design.** A `secret get` would be
 called by the first agent that wanted to check its work, and the invariant would be gone. If a value
 needs to leave the store, it leaves through the keyboard.
+
+### Encrypted at rest, and what that is worth
+
+The stored values are encrypted, with the key in the XDG **data** directory while the ciphertext
+sits in the XDG **config** directory. The separation is the substance of it.
+
+**It does not stop a process running as you.** That process can read the key file, and it does not
+need to: it can run `use-computer type --secret gh-token` and read the credential out of a text
+field. No local encryption fixes that, because whatever types the secret must be able to decrypt it.
+Any claim otherwise is a claim that the key is somewhere the program cannot reach.
+
+**It stops accidental disclosure**, which is how credentials actually leak — a `~/.config`
+synchronised to a service or committed to a dotfiles repository, a config file pasted into an issue
+or a support thread, a `cat` with somebody watching, a disk image handed to somebody else. That is a
+real and ordinary failure and it is worth closing.
+
+Both sentences are in the documentation on purpose. "Encrypted" is a word a reader completes with
+their own threat model, and the one they supply is usually wider than the one that holds.
 
 ### What this protects, and what it does not
 

@@ -3,7 +3,7 @@ title: "Interfaces"
 status: synced
 author: ""
 last-modified: "2026-09-17T00:00:00.000Z"
-version: "4.4"
+version: "4.5"
 ---
 
 # Interfaces
@@ -637,9 +637,29 @@ writes into its own directory.
 
 ```toml
 [secrets.gh-token]
-value = "…"
+value = "gAAAAABmK3…"     # a Fernet token
 set-at = "2026-09-17T09:12:04Z"
 ```
+
+The **value is encrypted**; the name and the timestamp are not, so `secret list` works without the
+key and no command needs one to say what exists.
+
+The key is `secret.key` in the XDG **data** directory — 32 random bytes, `0600` at creation, minted
+on the first write and never on a read. It is deliberately not beside the ciphertext: a key that
+travels with the data protects nothing that copies a directory. `USE_COMPUTER_SECRET_KEY_FILE`
+overrides the path.
+
+Fernet is authenticated, so a wrong key fails rather than decrypting to a plausible string that
+then gets typed into a login form. `SecretUnreadableError` is exit code `1` and covers both ways to
+reach it — a value written before encryption, and a key that was lost or replaced — because the
+remedy is the same and the tool cannot tell them apart:
+
+```
+the stored value for 'gh-token' is not readable with the current key. If it was stored before
+encryption, run `use-computer secret set gh-token` to store it again.
+```
+
+There is no recovery path and no escrow: an escrow is a second copy of the thing being protected.
 
 It is not part of the layered value resolution: it is keyed by name rather than by field, nothing in
 it can override a setting, and `--secret NAME` resolves it in two steps — project store, then

@@ -2,8 +2,8 @@
 title: "Tech Stack"
 status: synced
 author: ""
-last-modified: "2026-09-05T13:30:00.000Z"
-version: "1.8"
+last-modified: "2026-09-17T00:00:00.000Z"
+version: "1.9"
 ---
 
 # Tech Stack
@@ -34,6 +34,13 @@ Anything that tells a user what to install names the distribution.
 | pillow | current | Screenshots and before/after comparison. |
 | python-dotenv | current | `.env` layering. |
 | tomli | **only below Python 3.11** | `tomllib` is stdlib from 3.11. |
+| cryptography | >= 42 | Fernet, for the secret store. **Core, not an extra.** |
+
+`cryptography` is the one dependency here that had to argue its way out of the extras list. A
+backend is optional because a missing one costs a capability and says so; a store that is
+*sometimes* encrypted is not a property anybody can plan around. And the reason PyGObject is not
+listed as an extra does not apply to it: `cryptography` ships wheels for every platform and Python
+this package supports, so there is no build step to fail and nobody is left with a broken CLI.
 
 ## Optional extras
 

@@ -3,7 +3,7 @@ title: "Entities"
 status: synced
 author: ""
 last-modified: "2026-09-17T00:00:00.000Z"
-version: "3.2"
+version: "3.3"
 ---
 
 # Entities
@@ -241,10 +241,16 @@ One entry in the secret store: `name: str`, `value: SecretStr`, `set_at: datetim
 (`global` | `project`) — which of the two files it was found in, filled by the reader rather than
 written to disk.
 
-`value` is a `SecretStr` from the moment it is parsed, so it masks itself in `repr`, in a log line
-and in a traceback. `FileStore` is the `0600` TOML implementation, and `Secrets` is the resolver
-over the two of them plus the environment — `get`, `require`, `entries`. An OS keychain is a second
-`FileStore`-shaped implementation, which is why the CLI never names a file.
+`value` is a `SecretStr` from the moment it is decrypted, so it masks itself in `repr`, in a log
+line and in a traceback. `FileStore` is the `0600` TOML implementation, and `Secrets` is the
+resolver over the two of them plus the environment — `get`, `require`, `entries`. An OS keychain is
+a second `FileStore`-shaped implementation, which is why the CLI never names a file.
+
+**The cipher lives inside `FileStore`.** `Secrets`, the runner and the CLI never hold a key and
+never see a ciphertext, so the store's interface is the same one a keychain would satisfy. The key
+itself is resolved by `key_path()` against the XDG *data* directory, minted lazily on a write, and
+`SecretUnreadableError` is what a failed decrypt raises — never `InvalidToken`, which names a
+library to a caller who is mid-task and cannot see the code.
 
 There is deliberately **no** method that returns every value at once: the store is read one name at
 a time, by the action that is about to type it. `entries()` returns `SecretEntry` objects, which
@@ -260,7 +266,10 @@ scale), `KeySyntaxError`, `ConfigError`, `ActionFailedError`,
 `AmbiguousWindowError` (carries the matching `WindowInfo`s),
 `ActionNotSupportedError` (names the actions the matched node does support),
 `SecretNotFoundError` (names the missing secret and the command that stores it — and never the
-names that do exist, which would read as a list to try).
+names that do exist, which would read as a list to try),
+`SecretUnreadableError` (a stored value did not decrypt: written before encryption, or the key is
+gone — one message, because the remedy is the same and the two are indistinguishable),
+`SecretNameError` (a name that would not survive being a TOML key or an environment variable).
 
 ## Agent Notes
 

@@ -2,11 +2,17 @@
 
 One invariant holds this module together -- *a secret leaves the store into the keyboard, and never
 into stdout*. So there is no function here that returns every value at once, nothing renders a
-value, and the only way out is :func:`resolve`, called by the action that is about to send it.
+value, and the only way out is :meth:`Secrets.require`, called by the action about to send it.
 
-The value is a ``SecretStr`` from the moment it is parsed, which masks it in a ``repr``, a log line
-and a traceback. That is defence in depth rather than the mechanism: the mechanism is that actions
-carry the *name*, so nothing that serialises an action can leak anything.
+The value is a ``SecretStr`` from the moment it is decrypted, which masks it in a ``repr``, a log
+line and a traceback. That is defence in depth rather than the mechanism: the mechanism is that
+actions carry the *name*, so nothing that serialises an action can leak anything.
+
+Values are encrypted at rest, and the key lives in the XDG **data** directory while the ciphertext
+lives in the XDG **config** directory. That separation is the whole point: it does not stop a
+process running as the user -- which could read both, and could more simply just run
+``type --secret`` -- but it does stop a `~/.config` that gets synced, committed to a dotfiles
+repository or pasted into a bug report from carrying usable credentials.
 """
 
 from __future__ import annotations
@@ -18,9 +24,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+from cryptography.fernet import Fernet, InvalidToken
 from pydantic import BaseModel, ConfigDict, SecretStr
 
-from use_computer.config import PROJECT_DIR, find_project_root, xdg_config_dir
+from use_computer.config import PROJECT_DIR, find_project_root, xdg_config_dir, xdg_data_dir
 from use_computer.errors import SecretNotFoundError, UseComputerError
 
 if sys.version_info >= (3, 11):
@@ -29,6 +36,14 @@ else:  # pragma: no cover - exercised on 3.10 only
     import tomli as tomllib
 
 STORE_FILENAME = "secrets.toml"
+
+#: The key file, in the XDG *data* directory -- deliberately not beside the ciphertext. A key next
+#: to the data is theatre: whatever copies one copies the other, and the thing this protects
+#: against is a `~/.config` that gets synced, committed or pasted somewhere.
+KEY_FILENAME = "secret.key"
+
+#: Overrides that path, so the key can live on a removable drive or under a different sync policy.
+KEY_FILE_ENV = "USE_COMPUTER_SECRET_KEY_FILE"
 
 #: Supplies one secret from the environment, for a machine with nobody sitting at it to answer a
 #: prompt. Dashes in the name become underscores.
@@ -44,6 +59,75 @@ _VALID_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
 class SecretNameError(UseComputerError):
     """A secret name is not usable as a key."""
+
+
+class SecretUnreadableError(UseComputerError):
+    """A stored value did not decrypt with the current key.
+
+    Two causes, one remedy, and the tool cannot tell them apart: the value predates encryption, or
+    the key file was lost or replaced. Either way the credential is gone and has to be stored
+    again, so the message says that rather than naming a cipher.
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        super().__init__(
+            f"the stored value for {name!r} is not readable with the current key. If it was "
+            f"stored before encryption, run `use-computer secret set {name}` to store it again."
+        )
+
+
+# --- the key -----------------------------------------------------------------------------------
+
+
+def key_path() -> Path:
+    """Where the key lives. Never beside the ciphertext."""
+    override = os.environ.get(KEY_FILE_ENV)
+    if override:
+        return Path(override).expanduser()
+    return xdg_data_dir() / KEY_FILENAME
+
+
+def _write_private(path: Path, data: bytes) -> None:
+    """Write a file only its owner can read, private **at creation**.
+
+    chmod afterwards leaves a window in which the file is world-readable, and what is readable in
+    that window is either the credential or the key to it.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data)
+    os.chmod(path, 0o600)
+
+
+def _read_key() -> Fernet | None:
+    """The cipher, or ``None`` when no key has ever been minted."""
+    path = key_path()
+    if not path.is_file():
+        return None
+    try:
+        return Fernet(path.read_bytes().strip())
+    except (OSError, ValueError) as exc:
+        raise UseComputerError(
+            f"{path} is not a usable key file: {exc}. Move it aside and store the secrets "
+            "again; there is no way to recover them without it."
+        ) from exc
+
+
+def _mint_key() -> Fernet:
+    """The cipher, minting a key if there is none.
+
+    Only ever called from a write. A `secret list` on a machine that has never stored anything
+    must not leave a key file behind.
+    """
+    existing = _read_key()
+    if existing is not None:
+        return existing
+    _write_private(key_path(), Fernet.generate_key())
+    found = _read_key()
+    assert found is not None
+    return found
 
 
 class SecretEntry(BaseModel):
@@ -93,11 +177,26 @@ class FileStore:
         return section if isinstance(section, dict) else {}
 
     def get(self, name: str) -> SecretStr | None:
+        """The value, decrypted.
+
+        Raises:
+            SecretUnreadableError: when the stored value does not decrypt with the current key.
+        """
         entry = self._read().get(name)
         if not isinstance(entry, dict):
             return None
         value = entry.get("value")
-        return SecretStr(value) if isinstance(value, str) else None
+        if not isinstance(value, str):
+            return None
+        cipher = _read_key()
+        if cipher is None:
+            raise SecretUnreadableError(name)
+        try:
+            return SecretStr(cipher.decrypt(value.encode("utf-8")).decode("utf-8"))
+        except (InvalidToken, ValueError) as exc:
+            # Authenticated encryption is what makes this a clean failure: a wrong key cannot
+            # produce a plausible string that then gets typed into somebody's login form.
+            raise SecretUnreadableError(name) from exc
 
     def entries(self) -> list[SecretEntry]:
         found = []
@@ -119,7 +218,7 @@ class FileStore:
         check_name(name)
         secrets = self._read()
         secrets[name] = {
-            "value": value,
+            "value": _mint_key().encrypt(value.encode("utf-8")).decode("ascii"),
             "set-at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
         self._write(secrets)
@@ -134,8 +233,9 @@ class FileStore:
 
     def _write(self, secrets: dict[str, Any]) -> None:
         lines = [
-            "# Written by `use-computer secret set`. Values here are not encrypted;",
-            "# the file is mode 0600 and must not be committed.",
+            "# Written by `use-computer secret set`. Each value is encrypted with the key in",
+            "# the XDG data directory; without that key this file is useless, and without this",
+            "# file the key is. Mode 0600, and still not something to commit.",
         ]
         for name, entry in sorted(secrets.items()):
             lines += [
@@ -144,14 +244,7 @@ class FileStore:
                 f"value = {_toml_string(str(entry.get('value', '')))}",
                 f"set-at = {_toml_string(str(entry.get('set-at', '')))}",
             ]
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        # 0600 **at creation**: chmod afterwards leaves a window in which the file is readable,
-        # and the thing readable in that window is the credential.
-        fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write("\n".join(lines) + "\n")
-        # An existing file keeps whatever mode it had, so narrow it too.
-        os.chmod(self.path, 0o600)
+        _write_private(self.path, ("\n".join(lines) + "\n").encode("utf-8"))
 
 
 def _parse_time(raw: Any) -> datetime | None:

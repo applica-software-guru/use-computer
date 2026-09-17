@@ -3,7 +3,7 @@ title: "Configuration"
 status: synced
 author: ""
 last-modified: "2026-09-17T00:00:00.000Z"
-version: "2.2"
+version: "2.3"
 ---
 
 # Configuration
@@ -146,6 +146,30 @@ working tree cannot be committed by accident.
 `--project` writes it to `.use-computer/secrets.toml` instead, for a credential that genuinely
 belongs to one piece of work. That file is covered by the `.gitignore` this tool already writes into
 its own directory, next to `.env` and `screens/`.
+
+**The values are encrypted, and the key is deliberately somewhere else:**
+
+```
+~/.config/use-computer/secrets.toml       the ciphertext — the directory people sync
+~/.local/share/use-computer/secret.key    the key — the directory they do not
+```
+
+That separation is the feature, not a detail. A key beside the data is theatre: whatever copies one
+copies the other, so a `~/.config` pushed to a dotfiles repository would carry both halves. The XDG
+**data** directory is already established in this tool as the place for things that are not
+configuration, and it is not what a dotfiles repository tracks.
+
+Names and timestamps stay in clear text, because `secret list` has to work without the key and
+hiding *which* credentials exist was never the point.
+
+`USE_COMPUTER_SECRET_KEY_FILE` moves the key — onto a removable drive, or into a directory with a
+different sync policy. The key is 32 random bytes, minted on the first `secret set` and never on a
+read, written `0600` at creation. **There is no recovery.** Lose it and the secrets are gone;
+`secret set` is how they come back, and an escrow copy would only be a second copy of the thing
+being protected.
+
+[safety.md](safety.md) says what this is worth and what it is not — it is narrower than the word
+"encrypted" suggests.
 
 `--secret NAME` looks in the project store first and the global store second — the same direction
 everything else layers. `USE_COMPUTER_SECRET_<NAME>` supplies the value from the environment for a

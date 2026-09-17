@@ -31,6 +31,14 @@ dependencies = [
     "pillow>=10",
     "python-dotenv>=1.0",
     "tomli>=2.0; python_version < '3.11'",
+    "pynput>=1.8.2",
+    "mss>=10.2.0",
+    # The secret store is encrypted, so this is not optional. It is deliberately *not* an extra
+    # like the backends: those are optional because a missing one costs a capability, while a
+    # secret store that is sometimes encrypted is a security property nobody can rely on. The
+    # BUG-003 argument against listing PyGObject does not apply -- cryptography ships wheels for
+    # every platform and Python this package supports, so there is no build step to fail.
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]

@@ -13,6 +13,7 @@ import stat
 from pathlib import Path
 
 import pytest
+from cryptography.fernet import Fernet
 from typer.testing import CliRunner
 
 from tests.conftest import CliResult, strip_ansi
@@ -22,7 +23,14 @@ from use_computer.cli import app
 from use_computer.config import GITIGNORE_LINES, PROJECT_DIR, Settings
 from use_computer.errors import SecretNotFoundError
 from use_computer.runner import Session
-from use_computer.secrets import STORE_FILENAME, Secrets, global_store, project_store
+from use_computer.secrets import (
+    STORE_FILENAME,
+    Secrets,
+    SecretUnreadableError,
+    global_store,
+    key_path,
+    project_store,
+)
 from use_computer.tree import NodeSelector
 
 VALUE = "correct-horse-battery-staple"
@@ -281,3 +289,82 @@ def test_verification_still_works_for_an_ordinary_type() -> None:
 
     assert result.results[0].change is not None
     assert result.results[0].verify_skipped is False
+
+
+# --- encryption --------------------------------------------------------------------------------
+
+
+def test_the_file_on_disk_does_not_contain_the_value() -> None:
+    invoke("secret", "set", "gh-token", stdin=VALUE)
+    raw = global_store().path.read_text(encoding="utf-8")
+    assert VALUE not in raw
+    assert "gh-token" in raw  # the name stays readable, so `list` needs no key
+
+
+def test_the_key_is_not_beside_the_ciphertext() -> None:
+    """The separation is the point: whatever syncs `~/.config` must not carry the key."""
+    invoke("secret", "set", "gh-token", stdin=VALUE)
+    assert key_path().is_file()
+    assert key_path().parent != global_store().path.parent
+
+
+def test_the_key_is_readable_only_by_its_owner() -> None:
+    invoke("secret", "set", "gh-token", stdin=VALUE)
+    assert stat.S_IMODE(key_path().stat().st_mode) == 0o600
+
+
+def test_a_read_does_not_mint_a_key() -> None:
+    """`secret list` on a machine that has stored nothing must leave no key behind."""
+    assert invoke("secret", "list").exit_code == 0
+    assert not key_path().is_file()
+
+
+def test_the_key_file_can_be_moved_elsewhere(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    elsewhere = tmp_path / "removable" / "use-computer.key"
+    monkeypatch.setenv("USE_COMPUTER_SECRET_KEY_FILE", str(elsewhere))
+    invoke("secret", "set", "gh-token", stdin=VALUE)
+    assert elsewhere.is_file()
+    assert Secrets().require("gh-token").get_secret_value() == VALUE
+
+
+def test_losing_the_key_is_a_named_refusal_not_a_wrong_string() -> None:
+    invoke("secret", "set", "gh-token", stdin=VALUE)
+    key_path().unlink()
+
+    with pytest.raises(SecretUnreadableError) as caught:
+        Secrets().require("gh-token")
+    assert "use-computer secret set gh-token" in str(caught.value)
+
+
+def test_a_replaced_key_never_decrypts_to_a_plausible_string() -> None:
+    """Authenticated encryption: a wrong key fails, it does not produce a wrong password."""
+    invoke("secret", "set", "gh-token", stdin=VALUE)
+    key_path().write_bytes(Fernet.generate_key())
+
+    with pytest.raises(SecretUnreadableError):
+        Secrets().require("gh-token")
+
+
+def test_a_value_stored_before_encryption_says_how_to_fix_it() -> None:
+    store = global_store()
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        '[secrets.gh-token]\nvalue = "plain-text-from-an-older-version"\nset-at = ""\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(SecretUnreadableError) as caught:
+        Secrets().require("gh-token")
+    assert "stored before encryption" in str(caught.value)
+
+
+def test_a_rotated_secret_is_readable_and_the_old_ciphertext_is_gone() -> None:
+    invoke("secret", "set", "gh-token", stdin="first-value")
+    first = global_store().path.read_text(encoding="utf-8")
+    invoke("secret", "set", "gh-token", stdin="second-value")
+    second = global_store().path.read_text(encoding="utf-8")
+
+    assert Secrets().require("gh-token").get_secret_value() == "second-value"
+    assert first != second
+    assert "first-value" not in second and "second-value" not in second
