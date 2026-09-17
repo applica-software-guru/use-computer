@@ -10,7 +10,7 @@ from __future__ import annotations
 from difflib import get_close_matches
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter, field_validator, model_validator
 
@@ -187,9 +187,39 @@ class ScrollAction(_PositionedOrSelected):
     direction: ScrollDirection = ScrollDirection.DOWN
 
 
-class TypeAction(BaseAction):
+class _Literal(BaseModel):
+    """An action that sends a string it either carries or is told the name of.
+
+    The action never holds the credential -- it holds the *name*, and the store is read by the
+    runner at the moment of sending. That is what makes every rendering, serialisation and
+    traceback safe by construction rather than by remembering.
+    """
+
+    secret: str | None = Field(
+        default=None, description="Name of a stored secret to send instead of a literal."
+    )
+
+    #: The field this action would otherwise carry the string in.
+    _literal_field: ClassVar[str] = "text"
+
+    @model_validator(mode="after")
+    def _one_source(self) -> _Literal:
+        literal = getattr(self, self._literal_field, None)
+        name = getattr(self, "action", type(self).__name__)
+        if literal is not None and self.secret is not None:
+            raise ValueError(
+                f"{name} takes a literal or a secret, not both -- the value comes from one place"
+            )
+        if literal is None and self.secret is None:
+            raise ValueError(
+                f"{name} needs {self._literal_field!r}, or a secret to send in its place"
+            )
+        return self
+
+
+class TypeAction(BaseAction, _Literal):
     action: Literal["type"] = "type"
-    text: str
+    text: str | None = None
     rate: float | None = Field(
         default=None,
         ge=0,
@@ -311,7 +341,7 @@ class SelectAction(_ElementAction):
     action: Literal["select"] = "select"
 
 
-class SetValueAction(_ElementAction):
+class SetValueAction(_ElementAction, _Literal):
     """Assign text atomically, emitting no keystrokes.
 
     Not a faster `type`: some applications ignore it entirely, because their validation only
@@ -319,7 +349,9 @@ class SetValueAction(_ElementAction):
     """
 
     action: Literal["set_value"] = "set_value"
-    value: str
+    value: str | None = None
+
+    _literal_field: ClassVar[str] = "value"
 
 
 class ShowMenuAction(_ElementAction):

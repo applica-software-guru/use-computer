@@ -2,8 +2,8 @@
 title: "Entities"
 status: synced
 author: ""
-last-modified: "2026-09-05T13:30:00.000Z"
-version: "3.1"
+last-modified: "2026-09-17T00:00:00.000Z"
+version: "3.2"
 ---
 
 # Entities
@@ -151,6 +151,15 @@ Fields common to all: `delay: float | None`, `verify: bool`.
 Positional variants carry `Coordinate`s; `TypeAction` carries `text` and an optional rate;
 `KeyAction` carries a `KeyCombo`; `SetValueAction` carries `value`.
 
+`TypeAction` and `SetValueAction` carry **either** their literal (`text` / `value`) **or**
+`secret: str` naming an entry in the secret store, never both, and never neither — a validator
+rejects both pairings the way the coordinate-or-selector one does.
+
+**The action never holds the credential.** It holds the name; the store is read by the runner at
+the moment of sending, and the value exists as a plain string only in that call. This is what makes
+every rendering, serialisation and traceback safe by construction rather than by remembering, and
+it is a stronger guarantee than masking a field would be: there is no field to mask.
+
 `ActivateAction` carries a `TreeScope` and nothing else: its target is a window, not an element and
 not a point. `MoveAction`, `ClickAction`, `DoubleClickAction`, `RightClickAction`, `DragAction` and
 `ScrollAction` carry an optional `window: TreeScope | None` used when they are addressing a
@@ -199,6 +208,9 @@ an agent a correct coordinate, while a 2x8 caret stays noise.
 - `windows: WindowsResult | None` — for `windows`
 - `matched: UINode | None` — the node a selector resolved to
 - `via: Via | None` — the rung actually taken; `action` or `coordinate`, never `auto`
+- `typed: int | None` — characters sent; the only report a secret leaves behind
+- `verify_skipped: bool` — verification was in force and was refused, because the
+  after-screenshot of an action carrying a secret is a photograph of the credential
 - `error: ErrorInfo | None`
 
 ### RunResult *(frozen)*
@@ -223,6 +235,21 @@ fields (`host`, `port`, `password` for vnc; `allow_local` for local) and an opti
 The pydantic-settings model, env prefix `USE_COMPUTER`. Holds the resolved configuration plus, for
 each field, the **layer** it came from — which is what `config show` prints.
 
+### StoredSecret
+
+One entry in the secret store: `name: str`, `value: SecretStr`, `set_at: datetime`, and `store`
+(`global` | `project`) — which of the two files it was found in, filled by the reader rather than
+written to disk.
+
+`value` is a `SecretStr` from the moment it is parsed, so it masks itself in `repr`, in a log line
+and in a traceback. `FileStore` is the `0600` TOML implementation, and `Secrets` is the resolver
+over the two of them plus the environment — `get`, `require`, `entries`. An OS keychain is a second
+`FileStore`-shaped implementation, which is why the CLI never names a file.
+
+There is deliberately **no** method that returns every value at once: the store is read one name at
+a time, by the action that is about to type it. `entries()` returns `SecretEntry` objects, which
+have no `value` field to omit.
+
 ### Errors
 
 `UseComputerError` (base) → `BackendNotAvailableError` (names the extra to install),
@@ -231,7 +258,9 @@ scale), `KeySyntaxError`, `ConfigError`, `ActionFailedError`,
 `UITreeUnavailableError` (no provider — names both the extra and, on Linux, the system package),
 `NodeNotFoundError` (nothing matched), `AmbiguousNodeError` (carries the candidates),
 `AmbiguousWindowError` (carries the matching `WindowInfo`s),
-`ActionNotSupportedError` (names the actions the matched node does support).
+`ActionNotSupportedError` (names the actions the matched node does support),
+`SecretNotFoundError` (names the missing secret and the command that stores it — and never the
+names that do exist, which would read as a list to try).
 
 ## Agent Notes
 

@@ -16,6 +16,7 @@ import json
 import sys
 from collections.abc import Sequence
 from enum import Enum
+from getpass import getpass
 from pathlib import Path
 from typing import Annotated, Any, NoReturn
 
@@ -62,6 +63,7 @@ from use_computer.coordinates import CoordinateSpace
 from use_computer.errors import UseComputerError
 from use_computer.prune import prune as prune_screenshots
 from use_computer.runner import Session, as_json
+from use_computer.secrets import Secrets, check_name, store_for
 from use_computer.skill import Scope
 from use_computer.skill import install as skill_install
 from use_computer.skill import remove as skill_remove
@@ -94,8 +96,13 @@ app = typer.Typer(
 )
 skill_app = typer.Typer(no_args_is_help=True, help="Manage the bundled agent skill.")
 config_app = typer.Typer(no_args_is_help=True, help="Inspect configuration.")
+secret_app = typer.Typer(
+    no_args_is_help=True,
+    help="Store values an action types by name. Nothing here ever prints one.",
+)
 app.add_typer(skill_app, name="skill")
 app.add_typer(config_app, name="config")
+app.add_typer(secret_app, name="secret")
 
 _err = Console(stderr=True, highlight=False, soft_wrap=True)
 
@@ -150,6 +157,13 @@ VerboseOption = Annotated[
 #: Text is the output. JSON is what you ask for, and it is never inferred from isatty(): agents
 #: run under a pty often enough that switching format on them would fail as a parse error far
 #: from its cause, on the caller least able to diagnose it.
+
+SecretOption = Annotated[
+    str | None,
+    typer.Option(
+        "--secret", help="Send a stored secret by name, without reading it.", metavar="NAME"
+    ),
+]
 
 # --- selector options ---------------------------------------------------------------------------
 # An action names its target by coordinate or by element. These are the element half, shared by
@@ -217,6 +231,23 @@ def _build(
         raise typer.Exit(EXIT_USAGE)
     fields = {k: v for k, v in fields.items() if k not in ("x", "y", "space")}
     return kind(selector=selector, via=via, **fields)  # type: ignore[no-any-return]
+
+
+def _one_source(literal: str | None, secret: str | None, flag: str) -> None:
+    """Exactly one of a literal and a secret name.
+
+    Giving both is bad usage rather than a precedence rule, for the same reason a coordinate and a
+    selector together are: deciding which wins would be a silent reinterpretation.
+    """
+    if literal is not None and secret is not None:
+        _err.print(
+            "[red]error:[/red] give a literal or a secret, not both -- "
+            "the value comes from one place"
+        )
+        raise typer.Exit(EXIT_USAGE)
+    if literal is None and secret is None:
+        _say("[red]error:[/red] {flag} is required, or --secret to send a stored one", flag=flag)
+        raise typer.Exit(EXIT_USAGE)
 
 
 def _scope(window: str | None) -> TreeScope | None:
@@ -400,6 +431,10 @@ def _text_lines(result: Any) -> str:
         verified = ""
         if item.change is not None:
             verified = f" \u2014 {_changed(item.change)}"
+        elif item.verify_skipped:
+            # Silence here would read as "nothing changed". A safety decision that leaves no
+            # trace in the output is the one thing this tool does not do.
+            verified = " \u2014 not verified (secret)"
         chunks.append(f"{done}{what}{how}{verified} \u2014 {item.duration_ms:.0f} ms")
         if item.screenshot is not None and item.screenshot.path is not None:
             # Already captured and already paid for. Saying where saves the agent asking again,
@@ -422,6 +457,12 @@ def _payload(item: Any) -> str:
     if name == "key":
         return f" {action.combo}"
     if name == "type":
+        if action.secret is not None:
+            # The count still catches the truncated paste; the name is what an agent debugging a
+            # rejected login needs. The value is not here, and no flag puts it here.
+            count = item.typed
+            chars = f"{count} chars " if count is not None else ""
+            return f" {chars}(secret {action.secret})"
         text = action.text
         shown = text if len(text) <= TYPED_TEXT_LIMIT else text[: TYPED_TEXT_LIMIT - 1] + "\u2026"
         # The count is what catches a truncated or a doubled paste; the text is what identifies it.
@@ -712,6 +753,7 @@ def scroll(
 @app.command("type")
 def type_text(
     text: Annotated[str | None, typer.Option("--text")] = None,
+    secret: SecretOption = None,
     rate: Annotated[
         float | None, typer.Option("--rate", help="Seconds between keystrokes.")
     ] = None,
@@ -722,10 +764,10 @@ def type_text(
     format: FormatOption = OutputFormat.TEXT,
     verbose: VerboseOption = 0,
 ) -> None:
-    """Type literal text. For shortcuts use `key`."""
-    text = _required(text, "--text")
+    """Type literal text, or a stored secret. For shortcuts use `key`."""
+    _one_source(text, secret, "--text")
     config = _config(use, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
-    _run([TypeAction(text=text, rate=rate)], config, verbose, fmt=format)
+    _run([TypeAction(text=text, secret=secret, rate=rate)], config, verbose, fmt=format)
 
 
 @app.command()
@@ -884,6 +926,7 @@ def set_value(
         str | None,
         typer.Option("--value", help="The text to assign."),
     ] = None,
+    secret: SecretOption = None,
     id: IdOption = None,
     role: RoleOption = None,
     name: NameOption = None,
@@ -901,10 +944,15 @@ def set_value(
 
     Not a faster `type`: this emits no key events, and some applications only validate on them.
     """
-    value = _required(value, "--value")
+    _one_source(value, secret, "--value")
     config = _config(use, delay=delay, dry_run=dry_run, verify=verify, verbose=verbose)
     selector = _require_selector(id, role, name, exact, nth, window)
-    _run([SetValueAction(selector=selector, value=value)], config, verbose, fmt=format)
+    _run(
+        [SetValueAction(selector=selector, value=value, secret=secret)],
+        config,
+        verbose,
+        fmt=format,
+    )
 
 
 app.command("focus")(_element_command(FocusAction, "Give keyboard focus to an element."))
@@ -1214,6 +1262,81 @@ def config_show(
     _write(render.config(payload))
 
 
+# --- secrets -----------------------------------------------------------------------------------
+# One invariant holds this group together: a secret leaves the store into the keyboard, and never
+# into stdout. So there is no `secret get`, and `list` knows only names. A command that printed a
+# value would be called by the first agent that wanted to check its work.
+
+ProjectStoreOption = Annotated[
+    bool,
+    typer.Option("--project", help="Use this project's store instead of the global one."),
+]
+
+
+@secret_app.command("set")
+def secret_set(
+    name: Annotated[str, typer.Argument(help="The name actions will refer to.")],
+    project: ProjectStoreOption = False,
+) -> None:
+    """Store a secret, read from stdin. Never pass the value as an argument.
+
+    An argument is visible in `ps` for the life of the process and is written to the shell
+    history verbatim -- the same reason `config init` has no `--password`.
+    """
+    try:
+        check_name(name)
+        store = store_for(project)
+    except UseComputerError as exc:
+        _fail(exc)
+    value = getpass("Value: ", stream=sys.stderr) if _stdin_is_a_tty() else _read_stdin()
+    value = value.strip("\r\n")
+    if not value:
+        _err.print("[red]error:[/red] no value given; a secret cannot be empty")
+        raise typer.Exit(EXIT_USAGE)
+    try:
+        store.put(name, value)
+    except OSError as exc:
+        _fail(exc)
+    _write(f"stored {name} in {store.path}")
+
+
+@secret_app.command("list")
+def secret_list(format: FormatOption = OutputFormat.TEXT) -> None:
+    """List stored secrets by name. There is no command that prints one."""
+    entries = Secrets().entries()
+    if format is OutputFormat.JSON:
+        _emit(
+            {
+                "secrets": [
+                    {
+                        "name": entry.name,
+                        "store": entry.store,
+                        "set-at": entry.set_at.isoformat() if entry.set_at else None,
+                    }
+                    for entry in entries
+                ]
+            }
+        )
+        return
+    _write(render.secrets(entries))
+
+
+@secret_app.command("rm")
+def secret_rm(
+    name: Annotated[str, typer.Argument(help="The secret to remove.")],
+    project: ProjectStoreOption = False,
+) -> None:
+    """Remove a stored secret."""
+    try:
+        store = store_for(project)
+    except UseComputerError as exc:
+        _fail(exc)
+    if not store.remove(name):
+        _say("[red]error:[/red] no secret named {name} in {path}", name=name, path=store.path)
+        raise typer.Exit(EXIT_FAILURE)
+    _write(f"removed {name} from {store.path}")
+
+
 # --- skill -------------------------------------------------------------------------------------
 
 ScopeOption = Annotated[Scope, typer.Option("--scope", help="Where to install the skill.")]
@@ -1327,6 +1450,7 @@ _COMMANDS = frozenset(
         "activate",
         "batch",
         "config",
+        "secret",
         "skill",
     }
 )

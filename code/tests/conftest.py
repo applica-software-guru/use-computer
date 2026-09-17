@@ -52,6 +52,13 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[No
     # "~/shots" resolving to the real home while Path.home() answered with the temporary one.
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    # And the cwd, because a project root is discovered by walking *up* from it. Run from the
+    # checkout, `code/.use-computer` is found and resolution reads a developer's real profile --
+    # and anything that writes through that path writes into it. A test must not be able to.
+    # The `project` fixture chdirs again, to one it made.
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(elsewhere)
     yield
 
 

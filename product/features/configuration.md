@@ -2,8 +2,8 @@
 title: "Configuration"
 status: synced
 author: ""
-last-modified: "2026-09-10T00:00:00.000Z"
-version: "2.1"
+last-modified: "2026-09-17T00:00:00.000Z"
+version: "2.2"
 ---
 
 # Configuration
@@ -18,6 +18,8 @@ own**: the first ancestor containing a `.use-computer` directory wins. That dire
 
 - `config.toml` — **committed**. Profiles and settings.
 - `.env` — **gitignored**. Secrets: VNC passwords, hosts that are not public.
+- `secrets.toml` — **gitignored**, and present only when a secret was stored with `--project`.
+  Named values the agent types without reading; see [Secrets](#secrets).
 
 When no project root is found, XDG fallbacks apply: the XDG **config** directory for
 `config.toml` and the XDG **data** directory for anything stored. Never a cache directory —
@@ -115,6 +117,55 @@ question about a profile by guessing a name. So the refusal branches on what is 
 Neither message is something an agent should work around. Guessing a profile name, or running
 `config init` on somebody's machine to get past an error, is worse than stopping.
 
+## Secrets
+
+A password or a token is stored once, by name, and from then on it is typed without ever being
+read — the invariant and its limits are in [safety.md](safety.md). This section is where the value
+actually lives.
+
+```bash
+use-computer secret set gh-token        # prompts, hidden, when stdin is a TTY
+pass show gh/token | use-computer secret set gh-token
+use-computer secret list
+use-computer secret rm gh-token
+```
+
+**The value is never an argument.** An argument is visible in `ps` for the life of the process and
+is written to the shell history verbatim — the same reason `config init` has no `--password` flag.
+From a TTY the command prompts with the input hidden; from a pipe it reads a single line.
+
+`secret list` prints names, where each one is stored and when it was set. It never prints a value,
+not clamped and not behind a flag, and there is no `secret get` at all.
+
+### Where it is stored
+
+A `0600` file, **global by default**: `secrets.toml` in the XDG config directory. A credential is a
+fact about the person at the machine rather than about the repository, and a file outside the
+working tree cannot be committed by accident.
+
+`--project` writes it to `.use-computer/secrets.toml` instead, for a credential that genuinely
+belongs to one piece of work. That file is covered by the `.gitignore` this tool already writes into
+its own directory, next to `.env` and `screens/`.
+
+`--secret NAME` looks in the project store first and the global store second — the same direction
+everything else layers. `USE_COMPUTER_SECRET_<NAME>` supplies the value from the environment for a
+machine with nobody sitting at it, at the same precedence as the rest of the `env` layer, and is
+written nowhere.
+
+### When it is missing
+
+```
+error: no secret named 'gh-token'. Ask the user to run `use-computer secret set gh-token`.
+Do not ask them for the value here.
+```
+
+The second sentence is not decoration. The obvious repair for a missing secret — asking the user to
+paste it into the conversation — is the precise failure the whole mechanism exists to prevent, and
+it is what a helpful agent does by default unless it has been told otherwise.
+
+`--dry-run` resolves whether the name **exists** and fails on one that does not. A rehearsal that
+could not catch a typo in a secret's name would be a rehearsal of the wrong batch.
+
 ## Where screenshots go
 
 `screenshot-dir` sets the directory screenshots are written to when no explicit path was given. It
@@ -130,9 +181,9 @@ for this tool's things.
 **This used to be forbidden, for a reason that has not gone away.** A capture is the whole desktop —
 open conversations, mail, whatever is on the screen — and in a working tree one `git add -A`
 commits it. So the answer travels with the setting rather than being left as a warning:
-`.use-computer/.gitignore` is written when the directory is created, containing `.env` and
-`screens/`. It also closes a gap that predates all of this — `.env` has been *described* as
-gitignored since the beginning and nothing ever made it so.
+`.use-computer/.gitignore` is written when the directory is created, containing `.env`,
+`secrets.toml` and `screens/`. It also closes a gap that predates all of this — `.env` has been
+*described* as gitignored since the beginning and nothing ever made it so.
 
 The tool never touches a `.gitignore` outside its own directory, and never overwrites one that
 already exists. Editing the project's is the user's business, not a side effect of taking a
@@ -209,12 +260,18 @@ Highest to lowest:
 This orders the **values**. Which profile is selected is settled before any of it, by the three
 steps above.
 
+The secret store is **not** one of these layers. It is keyed by name rather than by field, nothing
+in it can override a setting, and it resolves on its own two steps — project store, then global.
+
 ## `config show`
 
 Prints **every resolved value and the layer it came from**, naming the exact environment variable
 that would override it, and **masking secrets**. It warns on stderr about unknown keys —
 **including keys inside profiles that are not selected**, because a typo in an unused profile is
 exactly the kind of thing that is discovered at the worst moment.
+
+It says nothing about the secret store, not even the names. `config show` reports resolved
+configuration, and the store is not configuration — `secret list` is where the names live.
 
 ## Agent Notes
 

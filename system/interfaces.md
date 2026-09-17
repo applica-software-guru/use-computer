@@ -2,8 +2,8 @@
 title: "Interfaces"
 status: synced
 author: ""
-last-modified: "2026-09-10T00:00:00.000Z"
-version: "4.3"
+last-modified: "2026-09-17T00:00:00.000Z"
+version: "4.4"
 ---
 
 # Interfaces
@@ -23,7 +23,7 @@ use-computer right-click  [--x INT --y INT] [--window SCOPE]
 use-computer drag        --from-x INT --from-y INT --to-x INT --to-y INT [--window SCOPE]
 use-computer scroll      --amount INT [--direction up|down|left|right] [--x INT --y INT]
                          [--window SCOPE]
-use-computer type        --text STR [--rate FLOAT]
+use-computer type        (--text STR | --secret NAME) [--rate FLOAT]
 use-computer key         COMBO
 use-computer screenshot  [--out PATH] [--of NODE_ID] [--pad INT] [--window SCOPE]
 use-computer activate    --window SCOPE
@@ -50,12 +50,20 @@ use-computer toggle      SELECTOR
 use-computer expand      SELECTOR
 use-computer collapse    SELECTOR
 use-computer select      SELECTOR
-use-computer set-value   SELECTOR --value STR
+use-computer set-value   SELECTOR (--value STR | --secret NAME)
 use-computer show-menu   SELECTOR
 ```
 
 `click`, `double-click`, `right-click` and `scroll` accept `SELECTOR` **instead of** their
 coordinates. Passing both is exit code `2`.
+
+`--secret NAME` names a value in the secret store, which is sent to the keyboard and never printed.
+It is mutually exclusive with `--text`/`--value` on the same action; passing both, or neither, is
+exit code `2`.
+
+An action carrying a secret is **never verified**, whatever `--verify` or configuration says: the
+after-screenshot would be a photograph of the credential. `verify_skipped` is true in the result and
+the text line reads `not verified (secret)` where the change report would be.
 
 ### SELECTOR
 
@@ -76,6 +84,9 @@ use-computer config init [--backend local|vnc] [--profile NAME]
                          [--host HOST] [--port PORT] [--allow-local]
                          [--dir PATH] [--no-probe] [--force]
 use-computer config show [--format text|json]
+use-computer secret set  NAME [--project]
+use-computer secret list [--format text|json]
+use-computer secret rm   NAME [--project]
 use-computer skill  install|update|remove|status
                     [--scope user|project|agents|claude] [--dir PATH] [--force]
                     [--format text|json]
@@ -103,6 +114,7 @@ itself**:
 ```
 key ctrl+z — 125 ms
 type 78 chars "/home/you/Desktop/workspace/20260905T140000-al…" — 2341 ms
+type 40 chars (secret gh-token) — 812 ms
 drag (666, 660) → (666, 545) — 665 ms
 move (666, 660) — 101 ms
 click toggle 'Menu' at 0/0/3/0/0/0/0 via a coordinate (25, 1015) — 484 ms
@@ -113,7 +125,8 @@ click at (200, 200) — changed 604x312 at 40,120 — 41 ms
 
 A line is the only record of an action that cannot be read back off the screen, so it names the key
 combination, the typed text (clamped, with its character count), both ends of a drag, and the
-coordinate actually sent after scaling. `--verify` reports the changed **box**, not a percentage
+coordinate actually sent after scaling. An action given `--secret` keeps the character count and
+substitutes the secret's **name** for its text, under every format and every verbosity. `--verify` reports the changed **box**, not a percentage
 that rounds a real change to `0%`. A `screenshot` prints its path and its size,
 because the path is the answer and the size is not available anywhere else. Errors are on stderr and stdout stays empty for the action that
 failed.
@@ -169,6 +182,14 @@ consumer of this CLI is a model, and a Python API exists underneath for programs
   ]
 }
 ```
+
+The `action` field echoes what was requested, so an action given `--secret` echoes
+`{"action": "type", "secret": "gh-token", "text": null}` — the name, and nothing else. The action
+never holds the credential at all: the store is read at the moment of sending, so there is no
+format, no verbosity and no error path under which the value reaches stdout, stderr or a log.
+
+`typed` carries how many characters were sent, which is what the text line reports for a secret in
+place of the text. `verify_skipped` is true when verification was in force and was refused.
 
 ### `windows` JSON
 
@@ -340,6 +361,25 @@ The names are listed for the person reading the transcript, not as an invitation
 single declared profile produces none of these: it is selected, and `config show` reports it with
 the layer of the file that declared it.
 
+### Secret errors
+
+`SecretNotFoundError` is exit code `1`, and the message names the next move and then forbids the
+wrong one:
+
+```
+no secret named 'gh-token'. Ask the user to run `use-computer secret set gh-token`.
+Do not ask them for the value here.
+```
+
+The second sentence is part of the contract. An agent that hits this error will otherwise ask the
+user to paste the credential into the conversation, which is the exact outcome the mechanism exists
+to prevent. The error **never** lists the names that do exist: a menu here is an invitation to try
+another one.
+
+`--dry-run` raises it too. Existence is resolved during a rehearsal even though nothing is typed,
+because a rehearsal that could not catch a mistyped secret name would be a rehearsal of a different
+batch.
+
 ### Batch input JSON
 
 A JSON array of action objects, discriminated on `action`. The discriminator accepts **the CLI's
@@ -377,6 +417,19 @@ Selector fields are flat in the batch JSON — `role`, `name`, `id`, `exact`, `n
 — and are collected into a `NodeSelector` by the model validator, so the file reads the way the CLI
 flags do.
 
+`type` and `set_value` accept **`secret`** in place of `text` or `value`, naming a stored credential
+the file therefore does not contain:
+
+```json
+[
+  {"action": "focus", "role": "text", "name": "Password"},
+  {"action": "type",  "secret": "vpn-password"},
+  {"action": "click", "role": "button", "name": "Sign in"}
+]
+```
+
+Both on one action is a parse error in the same one-sentence shape as an unknown action.
+
 ### `prune`
 
 One line, like everything else:
@@ -413,6 +466,37 @@ left alone. Exit `0` even when there was nothing to remove: an empty directory i
 was given. Exit `0` when the config was written and the probe succeeded or was skipped, `1` when
 the probe failed — the file is still on disk, so it can be corrected by hand — and `2` on bad
 usage.
+
+### `secret`
+
+The value is read from **stdin** and never from `argv`: a hidden prompt on stderr when stdin is a
+TTY, otherwise one line from the pipe, stripped of its trailing newline. There is no `--value` flag
+and there will not be one, for the reason `config init` has no `--password`.
+
+```
+$ use-computer secret set gh-token
+Value: (hidden)
+stored gh-token in /home/you/.config/use-computer/secrets.toml
+
+$ use-computer secret list
+gh-token      global   2026-09-17T09:12:04Z
+vpn-password  project  2026-09-14T16:40:11Z
+
+$ use-computer secret rm gh-token
+removed gh-token from /home/you/.config/use-computer/secrets.toml
+```
+
+`--project` targets `.use-computer/secrets.toml` instead of the XDG one; `secret list` shows both
+stores and which one each name came from. `--format json` gives `{"secrets": [{"name": …, "store":
+"global"|"project", "set-at": …}]}`.
+
+**There is no `secret get`, and no flag anywhere reveals a value.** `secret list` is names, stores
+and timestamps. Removing a name that does not exist is exit `1`; storing one that does replaces it,
+because a secret that could not be rotated without a second command would be rotated by editing the
+file.
+
+The store file is created `0600` **at creation**, not chmodded afterwards — the window between the
+two is a readable credential. `config show` does not report the store at all, not even the names.
 
 ## Backend Protocol
 
@@ -545,11 +629,32 @@ scale = 1.0
 
 `default-profile` may be omitted when the file defines exactly one profile.
 
+## Secret store
+
+`secrets.toml`, mode `0600`, in the XDG **config** directory by default and in `.use-computer/`
+under `--project`. Both are gitignored; the project one is covered by the `.gitignore` this tool
+writes into its own directory.
+
+```toml
+[secrets.gh-token]
+value = "…"
+set-at = "2026-09-17T09:12:04Z"
+```
+
+It is not part of the layered value resolution: it is keyed by name rather than by field, nothing in
+it can override a setting, and `--secret NAME` resolves it in two steps — project store, then
+global. Storage sits behind an interface whose first implementation is this file, so an OS keychain
+can be added as a second one without changing the CLI.
+
 ## Environment variables
 
 Prefix `USE_COMPUTER_`, mirroring the config keys — e.g. `USE_COMPUTER_DEFAULT_PROFILE`,
 `USE_COMPUTER_DELAY`, `USE_COMPUTER_ALLOW_LOCAL`. `config show` prints the exact variable name for
 every field.
+
+`USE_COMPUTER_SECRET_<NAME>` supplies one secret from the environment, for a machine with nobody
+sitting at it to answer a prompt. Dashes in the name become underscores, it takes precedence over
+both stores, and it is never written anywhere. `config show` does not print it.
 
 ## Agent Notes
 

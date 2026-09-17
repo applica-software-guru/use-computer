@@ -1,8 +1,8 @@
 ---
 name: use-computer
-description: Read and act on a GUI — the accessibility tree of what is on screen (roles, names, clickable boxes), then click, focus, toggle, expand, select, set a value, type, press keys, drag, scroll, screenshot. Locally or over VNC. Ask the tree first and use ui-locator's pixel coordinates only when the tree cannot see the element. Bring a window forward before aiming at it, and confirm what happened by re-reading, not by trusting the line.
+description: Read and act on a GUI — the accessibility tree of what is on screen (roles, names, clickable boxes), then click, focus, toggle, expand, select, set a value, type, press keys, drag, scroll, screenshot. Types a stored password or token by name, without ever reading it. Locally or over VNC. Ask the tree first and use ui-locator's pixel coordinates only when the tree cannot see the element. Bring a window forward before aiming at it, and confirm what happened by re-reading, not by trusting the line.
 x-skill-id: use-computer
-x-skill-version: "8"
+x-skill-version: "9"
 ---
 
 # use-computer
@@ -356,6 +356,51 @@ how a click aimed at a canvas ends up selecting text in a terminal.
 shortcuts.
 
 Give an action a coordinate **or** an element, never both.
+
+## Passwords and tokens: you send one, you never see one
+
+A credential is stored once, by name, by the person at the machine. You refer to it by that name,
+and the value never enters this conversation:
+
+```bash
+use-computer type --secret gh-token                    # into whatever holds focus
+use-computer set-value --id 0/2/1 --secret vpn-password  # into a named field
+```
+
+Four rules. The first two are absolute.
+
+1. **Never run `secret set` yourself.** If you are holding the value, it is already in your context
+   and the store bought nothing.
+2. **Never ask for a password here.** Not to store it, not to confirm it, not to check it looks
+   right. When a secret is missing the tool says so and names the command — repeat that to the
+   user and stop:
+
+   ```
+   no secret named 'gh-token'. Ask the user to run `use-computer secret set gh-token`.
+   ```
+
+3. **`--secret` protects the keystroke, not the screen.** Once the value is in a field that is not
+   masked, it is in `tree` as that node's `value`, and in any screenshot of that window. After
+   sending a secret: **do not `tree` that window and do not screenshot it.** Confirm by looking at
+   something else — the dialog closing, the next page appearing. The tool refuses to verify a
+   secret action for this reason, and says `not verified (secret)` where the change report would
+   be; that is expected, not a failure.
+4. **There is no way to read one back.** No command prints a secret. If you cannot find one, that
+   is the design and not a gap.
+
+`use-computer secret list` shows which names exist, so you can check for the one you need before
+planning around it. It never shows a value.
+
+In a batch, the same action carries `secret` in place of `text` or `value`, so the file names the
+credential without containing it:
+
+```json
+[
+  {"action": "focus", "role": "text", "name": "Password"},
+  {"action": "type",  "secret": "vpn-password"},
+  {"action": "click", "role": "button", "name": "Sign in"}
+]
+```
 
 ## Key syntax
 

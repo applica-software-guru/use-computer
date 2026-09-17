@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
+from use_computer.secrets import SecretEntry
 from use_computer.tree import UINode, WindowInfo
 
 TREE_LEGEND = '# id role "name" !states [actions] x,y wxh +offscreen ?unexposed'
@@ -125,6 +126,21 @@ def windows_for_a_reader(entries: Sequence[WindowInfo]) -> str:
         for entry in entries
     ]
     return _columns(rows, ["id", "app", "role", "title", "pid", "box", "active"])
+
+
+def secrets(entries: Sequence[SecretEntry]) -> str:
+    """The stored names, as columns. Never a value -- there is nothing here to truncate."""
+    if not entries:
+        return "no secrets stored"
+    rows = [
+        [
+            entry.name,
+            entry.store,
+            entry.set_at.strftime("%Y-%m-%dT%H:%M:%SZ") if entry.set_at else "",
+        ]
+        for entry in entries
+    ]
+    return _columns(rows, ["name", "store", "set-at"])
 
 
 def _plain(value: Any) -> str:

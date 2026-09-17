@@ -2,8 +2,8 @@
 title: "Safety"
 status: synced
 author: ""
-last-modified: "2026-09-05T00:00:00.000Z"
-version: "1.3"
+last-modified: "2026-09-17T00:00:00.000Z"
+version: "1.4"
 ---
 
 # Safety
@@ -32,6 +32,56 @@ profile without the opt-in fails with an error explaining exactly what to set.
 `config init` asks for that opt-in **out loud** rather than writing it into a file on the user's
 behalf, and declining aborts the setup instead of producing a profile that cannot run. An opt-in
 nobody was asked for is not an opt-in.
+
+## Secrets
+
+Half of what this tool is asked to automate ends at a login form, and the only way through one used
+to be `type --text 'hunter2'`. That single line puts the password in the agent's context, in the
+transcript that context is written to, in the shell history, and — on the result line that comes
+back — in the agent's context a second time. Three of those four outlive the session.
+
+So secrets are not a storage feature. They are **one invariant**:
+
+> A secret leaves the store into the keyboard, and never into stdout.
+
+The value is put there out of band by the person at the machine, and from then on it is referred to
+by name: `type --secret gh-token`. The agent composes the command, the tool reads the value, the
+keyboard receives it, and nothing in between is ever printed. See
+[configuration.md](configuration.md) for where the store lives.
+
+**There is no command that prints a secret, and its absence is the design.** A `secret get` would be
+called by the first agent that wanted to check its work, and the invariant would be gone. If a value
+needs to leave the store, it leaves through the keyboard.
+
+### What this protects, and what it does not
+
+`--secret` protects the keystroke. It does not protect the screen, and the difference is the part
+that has to be taught rather than built:
+
+- **The result line** would have printed the text — `_payload` renders every `type` with its
+  content, deliberately, because a line that omits what was done is useless when the screen and the
+  agent's model disagree. With `--secret` the line carries the character count and the secret's
+  **name**, never the value.
+- **The tree reports the value back.** A node carries its `value`, clamped to `tree-max-text`. A
+  token typed into a field that is not a password field is in the next `tree` the agent runs.
+- **The screenshot has it in pixels**, with no clamp.
+
+`--verify` is the sharpest edge of that last one: it captures before and after *every* action
+without being asked per action, so an agent turning on verification to check its work would arrange
+for a picture of the credential to arrive in its context. And there is no flag that turns
+verification off once configuration has turned it on.
+
+So **an action carrying a secret is never verified.** Not a default — a property of the action. The
+report it would produce is "some pixels moved", which a login already tells you, and it produces it
+by photographing the field. The line says `not verified (secret)` where the change report would
+have been, because silence there would read as *unchanged*, and a safety decision that leaves no
+trace in the output is the one thing this tool does not do.
+
+The other two are not defects and are not fixed here. `tree` and `screenshot` answer truthfully about what is
+on the screen, and after a successful `--secret` the screen is where the secret is. Refusing to
+answer would make them useless for the ninety-nine cases that have nothing to do with a credential.
+They are the reason the bundled skill teaches the mechanism and not merely the flag — see
+[skill.md](skill.md).
 
 ## Element actions are still real actions
 

@@ -240,7 +240,7 @@ def xdg_data_dir() -> Path:
 
 #: Files the tool writes into its own directory that must not be committed. It has always been
 #: documented that `.env` is gitignored and nothing ever made it so.
-GITIGNORE_LINES = ("# written by use-computer", ".env", "screens/")
+GITIGNORE_LINES = ("# written by use-computer", ".env", "secrets.toml", "screens/")
 
 SCREENS_DIR = "screens"
 

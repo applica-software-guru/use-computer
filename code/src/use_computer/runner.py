@@ -32,6 +32,7 @@ from use_computer.actions import (
     RightClickAction,
     ScreenshotAction,
     ScrollAction,
+    SetValueAction,
     TreeAction,
     TypeAction,
     WindowsAction,
@@ -62,6 +63,7 @@ from use_computer.errors import (
     UITreeUnavailableError,
     UseComputerError,
 )
+from use_computer.secrets import Secrets
 from use_computer.selectors import (
     active_window,
     budget,
@@ -201,6 +203,16 @@ class ActionResult(BaseModel):
     activated: str | None = Field(
         default=None, description="The window `activate` brought forward."
     )
+    typed: int | None = Field(
+        default=None,
+        description="How many characters were sent. The only report a secret leaves behind, "
+        "and what catches a truncated or a doubled paste.",
+    )
+    verify_skipped: bool = Field(
+        default=False,
+        description="Verification was in force and was refused: the after-screenshot of an "
+        "action carrying a secret is a photograph of the credential.",
+    )
     error: ErrorInfo | None = None
 
     @property
@@ -217,6 +229,7 @@ class _Outcome(NamedTuple):
     via: Via | None = None
     resolved: Coordinate | None = None
     activated: str | None = None
+    typed: int | None = None
 
 
 class RunResult(BaseModel):
@@ -242,10 +255,12 @@ class Session:
         profile: str,
         settings: Settings | None = None,
         provider: AccessibilityProvider | None = None,
+        secrets: Secrets | None = None,
     ) -> None:
         self._backend = backend
         self._profile = profile
         self._settings = settings or Settings()
+        self._secrets = secrets or Secrets()
         self._screenshot_dir = self._settings.screenshot_dir or default_screenshot_dir()
         self._screen = backend.screen_info()
         #: Built on the first action that needs it, so a run of pure coordinate actions never
@@ -309,11 +324,17 @@ class Session:
         for index, raw in enumerate(actions):
             action = with_default_space(raw, settings.space)
             verify = action.verify or settings.verify
+            # Never photograph a screen a credential was just typed into. Verification answers
+            # "some pixels moved", which a login already tells you, and it answers it with a
+            # picture of the field. There is no flag that turns `verify` off once configuration
+            # has turned it on, so this is a property of the action rather than a default.
+            skipped = verify and getattr(action, "secret", None) is not None
+            verify = verify and not skipped
             before = carried if verify else None
             if verify and before is None:
                 before = self._safe_screenshot()
 
-            result = self._run_one(action, before=before, verify=verify)
+            result = self._run_one(action, before=before, verify=verify, skipped=skipped)
             results.append(result)
             carried = result.screenshot if verify else None
 
@@ -332,7 +353,12 @@ class Session:
         )
 
     def _run_one(
-        self, action: Action, *, before: Screenshot | None, verify: bool
+        self,
+        action: Action,
+        *,
+        before: Screenshot | None,
+        verify: bool,
+        skipped: bool = False,
     ) -> ActionResult:
         settings = self._settings
         started = time.perf_counter()
@@ -345,6 +371,7 @@ class Session:
         matched: UINode | None = None
         via: Via | None = None
         activated: str | None = None
+        typed: int | None = None
         performed = False
         error: ErrorInfo | None = None
 
@@ -362,6 +389,12 @@ class Session:
                 # Everything above ran: the profile, the scaling, the key parsing, and the
                 # selector. A dry run that skipped resolution would tell the agent nothing it
                 # did not already know.
+                #
+                # A named secret is resolved for *existence* and never read: a rehearsal that
+                # could not catch a mistyped name would be a rehearsal of a different batch.
+                named = getattr(action, "secret", None)
+                if named is not None:
+                    self._secrets.require(named)
                 if matched is not None:
                     via = self._plan_via(action, matched)
                     if via is Via.COORDINATE:
@@ -371,6 +404,7 @@ class Session:
                 screenshot, tree, via = outcome.screenshot, outcome.tree, outcome.via
                 windows = outcome.windows
                 activated = outcome.activated
+                typed = outcome.typed
                 if outcome.resolved is not None:
                     target = outcome.resolved
                 performed = True
@@ -410,8 +444,22 @@ class Session:
             matched=matched,
             via=via,
             activated=activated,
+            typed=typed,
+            verify_skipped=skipped,
             error=error,
         )
+
+    def _literal(self, action: TypeAction | SetValueAction) -> str:
+        """The string this action sends, read out of the store at the last possible moment.
+
+        The credential exists as a plain ``str`` only here and in the backend call below it: it is
+        never stored on the action, so nothing that renders, serialises or logs one can carry it.
+        """
+        if action.secret is not None:
+            return self._secrets.require(action.secret).get_secret_value()
+        literal = action.text if isinstance(action, TypeAction) else action.value
+        assert literal is not None  # the model rejects an action with neither
+        return literal
 
     def _perform(
         self,
@@ -440,9 +488,8 @@ class Session:
             via = self._plan_via(action, matched)
             if via is Via.ACTION:
                 wanted = self._api_action(action, matched)
-                done = self._provider().perform(
-                    matched.id, wanted, getattr(action, "value", None)
-                )
+                value = self._literal(action) if isinstance(action, SetValueAction) else None
+                done = self._provider().perform(matched.id, wanted, value)
                 if done:
                     return _Outcome(via=Via.ACTION)
                 requested = getattr(action, "via", Via.AUTO)
@@ -475,7 +522,9 @@ class Session:
             backend.scroll(action.amount, action.direction, x, y)
         elif isinstance(action, TypeAction):
             rate = action.rate if action.rate is not None else self._settings.typing_rate
-            backend.type_text(action.text, rate)
+            text = self._literal(action)
+            backend.type_text(text, rate)
+            return _Outcome(via=via, resolved=resolved, typed=len(text))
         elif isinstance(action, KeyAction):
             backend.key(action.key_combo)
         elif isinstance(action, ScreenshotAction):

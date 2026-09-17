@@ -2,8 +2,8 @@
 title: "Agent Skill"
 status: synced
 author: ""
-last-modified: "2026-09-10T00:00:00.000Z"
-version: "5.0"
+last-modified: "2026-09-17T00:00:00.000Z"
+version: "5.1"
 ---
 
 # Agent Skill
@@ -129,6 +129,30 @@ content is part of the specification, not a README:
    The skill says one thing about it, in the errors section: when the tool reports the machine is
    not configured, **stop and tell the user**. Do not guess a profile name, and do not run
    `config init` on somebody's machine to get past an error.
+
+10. **Secrets, as a mechanism and not as a flag.** `--secret NAME` types a stored credential the
+    agent never reads, which only holds if the agent understands *why* — a model that has been
+    shown the flag and not the reasoning will helpfully offer to store the password it was just
+    given. Four things, in this order:
+
+    - **Never run `secret set` yourself.** If the agent is holding the value, it was already in the
+      agent's context and the store bought nothing. A missing secret is a full stop: name which
+      secret is missing and which command the user should run, then wait.
+    - **Never ask for a password in the conversation.** Not to store it, not to confirm it, not to
+      check it looks right.
+    - **`--secret` protects the keystroke, not the screen.** Once typed into a field that is not
+      masked, the value is in `tree` as a node's `value` and in any screenshot of that window. After
+      sending a secret: do not run `tree` on that window and do not capture it — confirm by looking
+      at something else, the dialog closing or the next page appearing. The tool refuses to verify
+      a secret action on its own account, so `not verified (secret)` is expected rather than a
+      failure, and the skill has to say so or the agent retries.
+    - **There is no way to read a secret back.** No command prints one. An agent that cannot find
+      such a command has found the design, not a gap.
+
+    The first two go first because they are what a smaller model drops first, and they stay
+    imperative. The third is worth the most words, because it is the counterintuitive half and the
+    one a capable model gets wrong for a good reason: verifying its work is otherwise correct
+    behaviour. See [safety.md](safety.md).
 
 `x-skill-version` bumps whenever that guidance changes, so `skill status` reports installed copies
 as outdated instead of leaving agents on stale instructions. The `description` line has to keep

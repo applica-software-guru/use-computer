@@ -2,8 +2,8 @@
 title: "Batch Execution"
 status: synced
 author: ""
-last-modified: "2026-09-05T12:40:00.000Z"
-version: "2.0"
+last-modified: "2026-09-17T00:00:00.000Z"
+version: "2.1"
 ---
 
 # Batch Execution
@@ -60,6 +60,26 @@ error: unknown action 'set-valeu' at index 1. Did you mean 'set-value'?
 A parser error is a message to a caller who is mid-task and cannot see the code. It says what was
 wrong, where, and what to write instead.
 
+## A secret is a name in the file, never a value
+
+A login is a batch — focus the field, type the credential, click the button — so `type` and
+`set_value` carry **`secret`** in place of `text` or `value`:
+
+```json
+[
+  {"action": "focus",  "role": "text", "name": "Password"},
+  {"action": "type",   "secret": "vpn-password"},
+  {"action": "click",  "role": "button", "name": "Sign in"}
+]
+```
+
+Giving both `text` and `secret` on one action is a parse error, in the same one-sentence shape as
+an unknown action. The batch file is the main scripting path, and a secret mechanism that did not
+reach it would push every real login back to `--text`.
+
+That file is then safe to keep and to read: it names the credential without containing it. See
+[configuration.md](configuration.md) for the store.
+
 ## Result
 
 One JSON object on stdout for the whole run: the profile used, the backend and its screen
@@ -83,6 +103,12 @@ One line per action, numbered, so a failure is locatable without counting:
 3 click button 'Invia' via the platform API — 12 ms
 4 tree — 24 nodes, 1 truncated
 ok — profile laptop, backend local, screen 1920x1080, scale 1
+```
+
+A secret keeps its place in that numbering and gives up only its content:
+
+```
+2 type 40 chars (secret vpn-password) — 812 ms
 ```
 
 The closing line says whether it finished and, when it did not, which action stopped it. The exit

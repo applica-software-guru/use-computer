@@ -60,6 +60,25 @@ class ActionFailedError(UseComputerError):
     """The backend failed to perform an action."""
 
 
+class SecretNotFoundError(UseComputerError):
+    """No store has the secret an action named.
+
+    The second sentence is part of the message rather than documentation around it. The obvious
+    repair for a missing secret -- asking the user to paste the credential into the conversation --
+    is the exact outcome the mechanism exists to prevent, and it is what a helpful agent does by
+    default unless it has been told otherwise.
+
+    It never lists the names that do exist: a menu here reads as a list to try.
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        super().__init__(
+            f"no secret named {name!r}. Ask the user to run "
+            f"`use-computer secret set {name}`. Do not ask them for the value here."
+        )
+
+
 class UITreeUnavailableError(UseComputerError):
     """No accessibility provider can be built here.
 

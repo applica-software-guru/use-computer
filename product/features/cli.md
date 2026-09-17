@@ -2,8 +2,8 @@
 title: "CLI"
 status: synced
 author: ""
-last-modified: "2026-09-10T00:00:00.000Z"
-version: "3.1"
+last-modified: "2026-09-17T00:00:00.000Z"
+version: "3.2"
 ---
 
 # CLI
@@ -24,10 +24,13 @@ use-computer tree
 use-computer tree --format json
 use-computer click --role button --name "Invia"
 use-computer set-value --id 0/2/1 --value "mario@example.com"
+use-computer type --secret gh-token
 use-computer batch actions.json
 use-computer prune --keep 20
 use-computer config init
 use-computer config show
+use-computer secret set gh-token
+use-computer secret list
 use-computer skill install --scope project
 ```
 
@@ -127,6 +130,20 @@ able to diagnose it.
 `tree` and `windows` take `--format text|json`, defaulting to **text**: the rendering is a string
 field inside the same single JSON object, and it costs 39% of the tokens the structured form does.
 `--format json` returns objects, for a caller that parses rather than reads.
+
+## The one value that never crosses stdout
+
+`secret set NAME` takes the value on **stdin** — hidden prompt from a TTY, one line from a pipe —
+and never as an argument, because an argument is visible in `ps` and lands in the shell history.
+`secret list` prints names, `secret rm` removes one, and there is no `secret get`: a command that
+printed a secret to stdout would be called by the first agent that wanted to check its work.
+
+Actions refer to a stored value by name with `--secret NAME`, which is mutually exclusive with
+`--text` or `--value` on the same action. See [configuration.md](configuration.md) for the store and
+[safety.md](safety.md) for what the mechanism does and does not protect.
+
+This is the one place the output contract below is a **security** property rather than an
+ergonomic one.
 
 ## Selector flags
 

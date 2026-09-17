@@ -2,8 +2,8 @@
 title: "Actions"
 status: synced
 author: ""
-last-modified: "2026-09-05T12:40:00.000Z"
-version: "2.0"
+last-modified: "2026-09-17T00:00:00.000Z"
+version: "2.1"
 ---
 
 # Actions
@@ -67,6 +67,31 @@ are the mirror image: no coordinate form, so `--via coordinate` on one of them i
 `set_value` assigns text atomically and emits **no keystrokes**. It is faster, and some
 applications ignore it because their validation only fires on key events. `type` sends real
 keystrokes to whatever holds focus. Both are correct, for different fields.
+
+### Typing something the agent must not read
+
+`type` and `set_value` take a **secret by name** in place of their literal text:
+
+```bash
+use-computer type --secret gh-token
+use-computer set-value --id 0/2/1 --secret gh-token
+```
+
+The tool reads the value out of the store and sends it; the value is never printed, never echoed
+back in the result, and cannot be read out by any command. The name and the character count are
+what the line carries. [safety.md](safety.md) has the invariant and, more importantly, its limits —
+this protects the keystroke, not the screen.
+
+A secret and a literal are mutually exclusive on the same action: passing `--text` and `--secret`
+together is a usage error rather than a silent precedence rule, and passing neither is one too.
+
+**An action carrying a secret is never verified** — see [safety.md](safety.md). The line says
+`not verified (secret)` where the change report would have been.
+
+`set_value` matters here as much as `type` does. Putting a credential in through the accessibility
+API is both quieter and more reliable than synthesising forty keystrokes into a form that may steal
+focus halfway through — though the same caveat applies as everywhere else on this page: some
+applications only validate on key events and will ignore it.
 
 ## Common parameters
 
@@ -149,6 +174,7 @@ click button 'Invia' at 0/2/1/3 via the platform API — 12 ms
 click toggle 'Menu' at 0/0/3/0/0/0/0 via a coordinate (25, 1015) — 484 ms
 key ctrl+z — 125 ms
 type 78 chars "/home/you/Desktop/workspace/20260905T140000-al…" — 2341 ms
+type 40 chars (secret gh-token) — 812 ms
 drag (666, 660) → (666, 545) — 665 ms
 move (666, 660) — 101 ms
 activated window 'albero.png ~ Line' 0/37/0 — 210 ms
@@ -164,6 +190,10 @@ Typed text is clamped like a node's `value`, with the character count given: the
 catches a truncated or a doubled paste. A coordinate action prints the coordinate it actually sent,
 **after scaling**, because that is the number a coordinate-space bug turns on.
 
+A secret keeps the count and trades the text for the **name**. The count still catches the truncated
+paste, and the name is what an agent debugging a rejected login needs — it sent one of several, and
+which one is the question. No flag puts the value on that line.
+
 ## Results
 
 Each action produces a result recording what was requested, the coordinates as resolved into
@@ -177,6 +207,9 @@ action ran.
 - Coordinates are never silently reinterpreted. An action whose coordinate space cannot be
   reconciled with the backend's fails with a clear error.
 - `type` sends text, not key names. `ctrl+a` typed through `type` is the literal seven characters.
+- A resolved secret is carried in `pydantic.SecretStr` inside the action, so it masks itself in
+  `repr`, in a log line and in a traceback. Every call site that renders an action is then safe by
+  default, including the ones not written yet — which is the only version of this that stays true.
 - An action operating an element through the API moves no pointer and paints no hover state, so
   `verify` sees less pixel change than the equivalent coordinate click. A small change there is
   not failure.
