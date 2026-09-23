@@ -243,6 +243,15 @@ class KeyAction(BaseAction):
         return parse_combo(self.combo)
 
 
+#: Half the side of a `--x`/`--y` crop when `--radius` is not given -- a 200x200 box, generous
+#: enough for a button or icon without paying for the whole screen.
+DEFAULT_ZOOM_RADIUS = 100
+
+#: Largest magnification `--zoom` accepts. Past this the crop is mostly interpolation, not
+#: legibility, and it is cheaper to shrink `--radius` and look closer instead.
+MAX_ZOOM = 8
+
+
 class ScreenshotAction(BaseAction):
     action: Literal["screenshot"] = "screenshot"
 
@@ -268,6 +277,37 @@ class ScreenshotAction(BaseAction):
         description="Grow the crop by this many pixels each side; a control's box often "
         "excludes the label beside it.",
     )
+    x: int | None = Field(
+        default=None,
+        description="Crop centred on this point, in screenshot pixels. Pairs with `y`.",
+    )
+    y: int | None = Field(default=None, description="Paired with `x`.")
+    radius: int = Field(
+        default=DEFAULT_ZOOM_RADIUS,
+        ge=1,
+        description="Half the side of the crop around `x, y`.",
+    )
+    zoom: int | None = Field(
+        default=None,
+        ge=1,
+        le=MAX_ZOOM,
+        description="Magnify the crop by this factor. Needs `--of` or `--x`/`--y` -- there is "
+        "nothing to zoom into on a full screenshot.",
+    )
+
+    @model_validator(mode="after")
+    def _one_crop(self) -> ScreenshotAction:
+        has_point = self.x is not None or self.y is not None
+        if has_point and (self.x is None or self.y is None):
+            raise ValueError("give both --x and --y, or neither")
+        if has_point and self.of is not None:
+            raise ValueError("crop to a node with --of, or to a point with --x/--y, not both")
+        if self.zoom is not None and self.of is None and not has_point:
+            raise ValueError(
+                "--zoom needs a crop -- pass --of or --x/--y, there is nothing to zoom into "
+                "on a full screenshot"
+            )
+        return self
 
 
 class TreeAction(BaseAction):

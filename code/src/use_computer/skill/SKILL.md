@@ -1,8 +1,8 @@
 ---
 name: use-computer
-description: Read and act on a GUI — the accessibility tree of what is on screen (roles, names, clickable boxes), then click, focus, toggle, expand, select, set a value, type, press keys, drag, scroll, screenshot. Types a stored password or token by name, without ever reading it. Locally or over VNC. Ask the tree first and use ui-locator's pixel coordinates only when the tree cannot see the element. Bring a window forward before aiming at it, and confirm what happened by re-reading, not by trusting the line.
+description: Read and act on a GUI — the accessibility tree of what is on screen (roles, names, clickable boxes), then click, focus, toggle, expand, select, set a value, type, press keys, drag, scroll, screenshot. Types a stored password or token by name, without ever reading it. Locally or over VNC. Ask the tree first and use ui-locator's pixel coordinates only when the tree cannot see the element. Zoom into a guessed point when it is small, crowded or a click already missed, bring a window forward before aiming at it, and confirm what happened by re-reading, not by trusting the line.
 x-skill-id: use-computer
-x-skill-version: "9"
+x-skill-version: "10"
 ---
 
 # use-computer
@@ -113,7 +113,8 @@ accurate than the one below it.
 2. **A coordinate from the tree** — the element is there but the platform will not operate it.
    `click` falls back to its centre on its own and tells you it did.
 3. **Vision** — the tree cannot see it. Screenshot, ask ui-locator where the thing is, and click
-   those pixels.
+   those pixels. Zoom first, instead, when you have a reason not to trust the guess yet — see
+   [Zoom when a guess is not enough](#zoom-when-a-guess-is-not-enough).
 
 Rung three is the floor the whole ladder stands on. It is not going anywhere; it is simply not the
 first thing to try.
@@ -277,7 +278,68 @@ a search box narrow and at the top — and by focus: click one, re-read the tree
 
 **`root: null`** with a `reason` means there is no tree here at all: `unavailable` (no provider, or
 a vnc profile), `denied` (permission), `empty` (the app exposes nothing). A `screenshot` path comes
-back with it — that is your cue to switch to ui-locator.
+back with it — that is your cue to switch to ui-locator; see below for when to zoom before acting
+on what it says.
+
+## Zoom when a guess is not enough
+
+Most rung-three clicks need no zoom at all: screenshot, ask ui-locator (or read the picture
+yourself), click the point it gives you, confirm the usual way — re-read the tree, or `--verify`.
+That is the common case, and spending an extra image on every one of those clicks would cost more
+than it saves.
+
+Reach for a closer look when one of these is true instead:
+
+- **The target is small or crowded** — a row of icons, controls packed close together — where a
+  screen downscaled to fit a vision model's limit does not carry enough pixels per element to tell
+  them apart with confidence.
+- **A click already missed.** `--verify` reported `unchanged`, or a re-read shows nothing
+  happened. Before trying the same pixel again, look at what is actually there instead of guessing
+  a second time the same way the first guess was made.
+- **The guess itself is not one you would trust** — two plausible candidates, an ambiguous edge, a
+  picture you would not bet the click on as it stands.
+
+That is a judgement call, not a step that runs every time. When it applies: a screenshot that has
+been downscaled to fit a vision model's limit makes a coordinate a guess **at the shrunk scale**,
+and turning it back into a screen pixel means multiplying by whatever the shrink factor was — the
+step that goes wrong, since it is arithmetic a model does unreliably on a number it cannot check,
+and a wrong answer looks exactly like a right one until the click misses. `screenshot` takes a
+point and looks closer instead, so that multiplication is rarely needed:
+
+```bash
+use-computer screenshot --x 860 --y 420                    # a 200x200 look around a guess
+use-computer screenshot --x 860 --y 420 --radius 40         # tighter, for a small target
+use-computer screenshot --x 860 --y 420 --zoom 4             # and magnified, for a fine one
+```
+
+```
+…/20260905T091200.481Z-zoom.png 80x80 at 820,380 zoom 4x -> 320x320
+```
+
+`--radius` (default 100) sets the crop's half-side around the point; `--zoom` magnifies what comes
+out of that crop by an integer factor — legibility, not new detail, the same way leaning in on a
+paper map does. The result names both: `80x80 at 820,380` is the crop, in screenshot pixels,
+**before** magnification; `zoom 4x -> 320x320` is the file you actually got. Converting a point you
+read off that file back to a screenshot coordinate is one division and one addition, not a scale
+factor pulled out of a resize you cannot see: `screenshot_x = 820 + local_x / 4`.
+
+Look at the zoomed picture, and one of two things is true:
+
+- **The target is where you expected.** Click the original guess — the zoom was the confirmation,
+  not a new coordinate to convert.
+- **It is off.** Read the offset from the zoomed picture and correct `--x`/`--y`, in screenshot
+  pixels, with the small arithmetic above. Re-run `screenshot --x --y` on the corrected point if
+  you are not sure, rather than clicking on the strength of one guess.
+
+`--zoom` composes with `--of`: a node the tree found but cannot name — a tiny icon whose filled
+state you need to read, say — can be cropped **and** magnified in one call,
+`screenshot --of 0/1/4 --zoom 4`, when the node's own box is too small to read comfortably on its
+own. `--zoom` refuses on a bare `screenshot` with no `--of` and no `--x`/`--y`: there is nothing to
+zoom into on the whole desktop, only something to crop first.
+
+Zooming costs one more small image, not another vision round trip through ui-locator — read the
+crop yourself before spending the click. Reserve a second ui-locator call for a target you still
+cannot place after looking closer.
 
 ## Acting on an element
 

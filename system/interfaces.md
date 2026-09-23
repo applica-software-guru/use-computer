@@ -25,7 +25,8 @@ use-computer scroll      --amount INT [--direction up|down|left|right] [--x INT 
                          [--window SCOPE]
 use-computer type        (--text STR | --secret NAME) [--rate FLOAT]
 use-computer key         COMBO
-use-computer screenshot  [--out PATH] [--of NODE_ID] [--pad INT] [--window SCOPE]
+use-computer screenshot  [--out PATH] [--of NODE_ID] [--pad INT]
+                         [--x INT --y INT] [--radius INT] [--zoom INT] [--window SCOPE]
 use-computer activate    --window SCOPE
 ```
 
@@ -33,6 +34,17 @@ use-computer activate    --window SCOPE
 is brought forward before the coordinate is sent. Omitted, the coordinate goes wherever the pointer
 already is, which is what a bare coordinate has always meant. `type` and `key` take no `--window`:
 they target the focus, and `activate` is how the focus is moved to a window.
+
+`screenshot --window` is the exception: it scopes `--of`'s node id (an id means nothing without the
+tree it came from) and is not consulted by `--x`/`--y`, which has no node to look up and crops
+whatever is on screen right now. `--radius` (default 100) sets the half-side of an `--x`/`--y`
+crop; `--zoom` magnifies whatever was captured -- by `--of` or by `--x`/`--y` -- by an integer
+factor, and is refused on a bare `screenshot` with neither, since there is then nothing to zoom
+into. See [coordinate-spaces.md](../product/features/coordinate-spaces.md) and
+[actions.md](../product/features/actions.md) for why: a coordinate read off a downscaled screenshot
+needs a scale factor to become a real pixel, and that multiplication is exactly where a vision
+model gets a click wrong. `screenshot --x/--y[--zoom]` confirms or corrects the guess at (near)
+full resolution first, at the cost of one small image.
 
 `activate` is the only command whose target is a window rather than an element or a point. It
 succeeds when the window is already in front (a no-op), and fails naming the window when nothing in

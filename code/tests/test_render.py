@@ -65,3 +65,18 @@ def test_a_crop_is_clipped_to_the_screen() -> None:
     assert (cropped.width, cropped.height) == (20, 10)
     assert cropped.box == (80, 40, 20, 10)
     assert cropped.of == "0/1"
+
+
+def test_magnify_scales_the_image_and_keeps_the_pre_zoom_box() -> None:
+    # `box` has to stay in screenshot pixels after magnification: it is the anchor a caller adds
+    # a (divided-back-down) point read off the enlarged image to, to get back to screenshot space.
+    from tests.fake_backend import png
+    from use_computer.compare import Screenshot, crop, magnify
+
+    shot = Screenshot(data=png(100, 50), width=100, height=50)
+    cropped = crop(shot, (10, 10, 20, 20), "0/1")
+    zoomed = magnify(cropped, 4)
+    assert (zoomed.width, zoomed.height) == (80, 80)
+    assert zoomed.box == (10, 10, 20, 20)
+    assert zoomed.zoom == 4
+    assert zoomed.of == "0/1"

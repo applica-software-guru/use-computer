@@ -182,6 +182,40 @@ def test_a_screenshot_action_writes_the_file_it_was_given(tmp_path: Path) -> Non
     assert result.results[0].screenshot.path == out
 
 
+def test_a_point_crop_is_centred_and_clipped_to_the_screen(tmp_path: Path) -> None:
+    backend = FakeBackend()  # 2560x1600
+    result = session(backend, screenshot_dir=tmp_path / 'shots').run(
+        [ScreenshotAction(x=2550, y=100, radius=50)]
+    )
+    shot = result.results[0].screenshot
+    assert shot is not None
+    assert shot.of is None
+    assert shot.box == (2500, 50, 60, 100)  # clipped to screenshot_width=2560
+    assert (shot.width, shot.height) == (60, 100)
+
+
+def test_zoom_magnifies_a_point_crop_and_keeps_the_pre_zoom_box(tmp_path: Path) -> None:
+    backend = FakeBackend()
+    result = session(backend, screenshot_dir=tmp_path / 'shots').run(
+        [ScreenshotAction(x=200, y=200, radius=20, zoom=4)]
+    )
+    shot = result.results[0].screenshot
+    assert shot is not None
+    assert shot.zoom == 4
+    assert shot.box == (180, 180, 40, 40)  # the crop, before magnification
+    assert (shot.width, shot.height) == (160, 160)  # 40 * 4
+
+
+def test_zoom_without_a_crop_is_a_usage_error() -> None:
+    with pytest.raises(ValidationError, match="--zoom needs a crop"):
+        ScreenshotAction(zoom=2)
+
+
+def test_a_point_and_a_node_cannot_both_address_the_crop() -> None:
+    with pytest.raises(ValidationError, match="not both"):
+        ScreenshotAction(of="0/1", x=10, y=10)
+
+
 def test_verify_writes_the_screen_it_already_captured_and_reports_where(
     tmp_path: Path,
 ) -> None:

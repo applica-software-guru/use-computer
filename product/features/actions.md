@@ -165,6 +165,37 @@ node id and an `ok` — the one failure in this tool that produces no signal at 
 the step whose whole job is to be the trustworthy one. So `--of` brings the node's window forward
 before capturing, and if it cannot, it **refuses and says the window is not visible**.
 
+### `screenshot --x/--y` crops to a point, `--zoom` magnifies it
+
+`--of` needs a node, which needs a tree. There is no tree at all around a canvas, a map, a game,
+or a VNC session, and a full screenshot of one of those is usually downscaled before a vision model
+ever sees it — so a coordinate that vision hands back, or one an agent reads off that picture
+itself, is a guess at the *shrunk* scale, and turning it back into a screenshot pixel means
+multiplying by a resize factor nothing prints anywhere. That multiplication is where a plausible
+click goes wrong.
+
+`--x`/`--y` crop around a guessed point instead of a node, at full resolution, so the guess can be
+confirmed — or corrected by a much smaller amount — before it is spent on a click:
+
+```bash
+use-computer screenshot --x 860 --y 420                # 200x200 around the point (--radius 100)
+use-computer screenshot --x 860 --y 420 --radius 40      # tighter
+use-computer screenshot --x 860 --y 420 --zoom 4          # and magnified
+→ …/20260905T092204.279Z-zoom.png 80x80 at 820,380 zoom 4x -> 320x320
+```
+
+`--zoom` magnifies whatever was captured — a `--x`/`--y` crop or an `--of` crop — by an integer
+factor. It buys legibility, not new detail, and it refuses on a bare `screenshot`: there is nothing
+to zoom into on the whole desktop, only something to crop first. The result still carries the
+**pre-zoom** crop in `box` (`80x80 at 820,380` above) alongside the magnified file it actually wrote
+(`320x320`), so a point read off the zoomed picture converts back to a screenshot coordinate with
+one division and one addition — `screenshot_x = 820 + local_x / 4` — rather than the display-wide
+resize factor a vision model would otherwise have to carry through a whole conversation.
+
+**Unlike `--of`, a point has no window to look up, so `--x`/`--y` does not bring one forward.** It
+crops whatever is on screen right now, exactly like a bare `screenshot`; call `activate --window`
+first if that is not what is meant.
+
 ## What an action prints
 
 One line, on stdout, **carrying what was done** — not merely that something was:

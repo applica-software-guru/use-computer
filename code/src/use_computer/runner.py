@@ -41,7 +41,7 @@ from use_computer.actions import (
     with_default_space,
 )
 from use_computer.backends import Backend, create_backend
-from use_computer.compare import ChangeReport, Screenshot, compare, crop
+from use_computer.compare import ChangeReport, Screenshot, compare, crop, magnify
 from use_computer.config import (
     PROJECT_DIR,
     BackendProfile,
@@ -243,6 +243,13 @@ class RunResult(BaseModel):
     ok: bool
     failed_index: int | None = None
     results: list[ActionResult] = Field(default_factory=list)
+
+
+def _point_box(x: int, y: int, radius: int) -> tuple[int, int, int, int]:
+    """The square crop `screenshot --x/--y/--radius` asks for, before it is clipped to the
+    screen. `crop()` does the clipping -- the same pure function `--of` already uses."""
+    side = radius * 2
+    return (x - radius, y - radius, side, side)
 
 
 class Session:
@@ -835,8 +842,18 @@ class Session:
                 self._backend.screenshot(), action.of, action.window, action.pad
             )
             label = "node"
+        elif action.x is not None and action.y is not None:
+            # No `_activate` here, deliberately: unlike `of`, a point has no window to look it up
+            # in -- `window` on this action only scopes `of`. A point crop captures whatever is
+            # in front right now, exactly like a plain screenshot; bring a window forward first
+            # with `activate` if that is not what is already on screen.
+            shot = crop(self._backend.screenshot(), _point_box(action.x, action.y, action.radius))
+            label = "region"
         else:
             shot = self._backend.screenshot()
+        if action.zoom is not None:
+            shot = magnify(shot, action.zoom)
+            label = "zoom"
         return shot.write_to(action.out or self._screenshot_path(label))
 
     def _crop_to_node(

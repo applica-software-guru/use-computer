@@ -60,7 +60,12 @@ class Screenshot(BaseModel):
     path: Path | None = None
     of: str | None = Field(default=None, description="The node id this was cropped to.")
     box: tuple[int, int, int, int] | None = Field(
-        default=None, description="The crop, in screenshot pixels."
+        default=None, description="The crop, in screenshot pixels -- before any zoom."
+    )
+    zoom: int | None = Field(
+        default=None,
+        description="Magnification applied on top of `box`. To recover a screenshot-space "
+        "point from one read off this image: divide by `zoom`, then add `box`'s left/top.",
     )
     data: bytes | None = Field(default=None, repr=False, exclude=True)
     width: int
@@ -129,6 +134,30 @@ def crop(
         space=shot.space,
         of=node_id,
         box=(left, top, right - left, bottom - top),
+    )
+
+
+def magnify(shot: Screenshot, factor: int) -> Screenshot:
+    """Enlarge a screenshot -- almost always a crop -- by an integer factor.
+
+    Upscaling recovers no detail the capture did not already have. What it buys is legibility: a
+    ten-pixel glyph or icon edge that a vision model glosses over reads cleanly once it is forty
+    pixels wide. `box` is left as the pre-zoom crop rect and `zoom` records the factor, so a point
+    read off the enlarged image maps back to screenshot space by one division and one addition --
+    arithmetic small and exact enough to do without a mistake, unlike a scale factor computed
+    from a display's resize ratio.
+    """
+    image = Image.open(io.BytesIO(shot.data or b""))
+    resized = image.resize((image.width * factor, image.height * factor), Image.Resampling.LANCZOS)
+    buffer = io.BytesIO()
+    resized.save(buffer, format="PNG")
+    return shot.model_copy(
+        update={
+            "data": buffer.getvalue(),
+            "width": resized.width,
+            "height": resized.height,
+            "zoom": factor,
+        }
     )
 
 

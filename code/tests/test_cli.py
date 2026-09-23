@@ -625,6 +625,27 @@ def test_a_single_screenshot_keeps_its_whole_path(
     assert "screenshots in " not in strip_ansi(result.stdout)
 
 
+def test_screenshot_x_y_zoom_report_the_crop_and_the_magnified_size(
+    runner: CliRunner, backend: FakeBackend, write_config: WriteConfig
+) -> None:
+    write_config(CONFIG)
+    result = invoke(
+        runner, "screenshot", "--x", "200", "--y", "200", "--radius", "20", "--zoom", "4"
+    )
+    line = strip_ansi(result.stdout).split("\n")[0]
+    assert "40x40 at 180,180" in line  # the crop, before magnification
+    assert "zoom 4x -> 160x160" in line  # what the file actually holds
+
+
+def test_zoom_without_a_crop_is_rejected_at_the_cli(
+    runner: CliRunner, backend: FakeBackend, write_config: WriteConfig
+) -> None:
+    write_config(CONFIG)
+    result = invoke(runner, "screenshot", "--zoom", "2")
+    assert result.exit_code == EXIT_USAGE
+    assert "--zoom needs a crop" in strip_ansi(result.stderr)
+
+
 def test_the_skill_command_answers_in_text(runner: CliRunner) -> None:
     # The command an agent runs to find out whether its own instructions are current, and the last
     # one still replying with a JSON object after the contract was inverted.

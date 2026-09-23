@@ -26,6 +26,7 @@ from rich.markup import escape
 
 from use_computer import render
 from use_computer.actions import (
+    DEFAULT_ZOOM_RADIUS,
     Action,
     ActionListAdapter,
     ActivateAction,
@@ -398,11 +399,15 @@ def _text_lines(result: Any) -> str:
         if item.action.action == "screenshot" and item.screenshot is not None:
             # The path is the answer, and the only part of it worth any tokens.
             shot = item.screenshot
-            where = (
-                f" {shot.box[2]}x{shot.box[3]} of {shot.of}"
-                if shot.box
-                else f" {shot.width}x{shot.height}"
-            )
+            if shot.of is not None:
+                where = f" {shot.box[2]}x{shot.box[3]} of {shot.of}"
+            elif shot.box is not None:
+                where = f" {shot.box[2]}x{shot.box[3]} at {shot.box[0]},{shot.box[1]}"
+            else:
+                where = f" {shot.width}x{shot.height}"
+            if shot.zoom is not None:
+                # `box`'s size is the pre-zoom crop; width/height is what the file now holds.
+                where += f" zoom {shot.zoom}x -> {shot.width}x{shot.height}"
             chunks.append(f"{_shorten(shot.path, folder)}{where}")
             continue
         if item.action.action == "activate" and item.activated:
@@ -801,6 +806,20 @@ def screenshot(
         typer.Option("--of", help="Crop to this node's box, from `tree`."),
     ] = None,
     pad: Annotated[int, typer.Option("--pad", help="Grow the crop by N pixels each side.")] = 0,
+    x: Annotated[
+        int | None,
+        typer.Option("--x", help="Crop centred on this point, in screenshot pixels."),
+    ] = None,
+    y: Annotated[int | None, typer.Option("--y", help="Paired with --x.")] = None,
+    radius: Annotated[
+        int, typer.Option("--radius", help="Half the side of the crop around --x/--y.")
+    ] = DEFAULT_ZOOM_RADIUS,
+    zoom: Annotated[
+        int | None,
+        typer.Option(
+            "--zoom", help="Magnify the crop by this factor. Needs --of or --x/--y."
+        ),
+    ] = None,
     window: WindowOption = None,
     use: UseOption = None,
     format: FormatOption = OutputFormat.TEXT,
@@ -808,7 +827,20 @@ def screenshot(
 ) -> None:
     """Capture the current screen to a file and report its path."""
     config = _config(use, verbose=verbose)
-    action = ScreenshotAction(out=out, of=of, pad=pad, window=TreeScope.parse(window))
+    try:
+        action = ScreenshotAction(
+            out=out,
+            of=of,
+            pad=pad,
+            x=x,
+            y=y,
+            radius=radius,
+            zoom=zoom,
+            window=TreeScope.parse(window),
+        )
+    except Exception as exc:
+        _err.print(f"[red]error:[/red] {exc}")
+        raise typer.Exit(EXIT_USAGE) from exc
     _run([action], config, verbose, fmt=format)
 
 

@@ -142,7 +142,10 @@ An enum: `auto` | `action` | `coordinate`. Which rung an element-addressed actio
 A discriminated union on `action`, with one variant per member of the action set:
 
 `MoveAction`, `ClickAction`, `DoubleClickAction`, `RightClickAction`, `DragAction`,
-`ScrollAction`, `TypeAction`, `KeyAction`, `ScreenshotAction` (which also carries `of`, `pad` and `window` for cropping to an element),
+`ScrollAction`, `TypeAction`, `KeyAction`, `ScreenshotAction` (which also carries `of`, `pad` and
+`window` for cropping to an element, `x`, `y` and `radius` for cropping to a point instead, and
+`zoom` to magnify either crop -- `x`/`y` and `of` are mutually exclusive, and `zoom` requires one
+of them),
 `TreeAction`, `FocusAction`,
 `ToggleAction`, `ExpandAction`, `CollapseAction`, `SelectAction`, `SetValueAction`,
 `ShowMenuAction`, `WindowsAction`, `ActivateAction`.
@@ -176,9 +179,13 @@ wins. `FocusAction`, `ToggleAction`, `ExpandAction`, `CollapseAction`, `SelectAc
 
 ### Screenshot
 
-`path: Path`, `width`, `height`, `space`, `captured_at`, and — when it was cropped to an element —
-`of: str | None` (the node id) and `box: tuple[int, int, int, int] | None` (the crop, in screenshot
-pixels).
+`path: Path`, `width`, `height`, `space`, `captured_at`, and — when it was cropped, to an element or
+to a point — `of: str | None` (the node id; `None` for a point crop) and
+`box: tuple[int, int, int, int] | None` (the crop, in screenshot pixels, **before** any zoom).
+`zoom: int | None` is the magnification applied on top of `box`; `width`/`height` are the size of
+the file actually written, so after a zoom they are `box`'s size times `zoom`. Recovering a
+screenshot-space point from one read off a zoomed image is `box`'s origin plus the local point
+divided by `zoom`.
 
 A screenshot that has been surfaced to the caller always has a path: it is a file. `data` is held
 in memory only while a comparison needs it, is never serialised, and never crosses the JSON
