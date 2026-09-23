@@ -32,7 +32,7 @@ The missing first call. A flat list of what is open, at one depth-2 read of the 
 [
   {"id": "0/29/0", "title": "◐ Estrazione albero UI", "role": "window",
    "pid": 4711, "box": [0, 0, 1920, 1038], "active": true},
-  {"id": "0/33/0", "title": "Roberto Conterosito – (1379)", "role": "panel",
+  {"id": "0/33/0", "title": "Mario Rossi – (1379)", "role": "panel",
    "pid": 5210, "box": [331, 130, 1152, 784], "active": false}
 ]
 ```

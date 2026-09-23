@@ -10,14 +10,14 @@ created-at: "2026-09-05T00:00:00.000Z"
 ## What happens
 
 ```
-$ use-computer tree --window "Roberto Conterosito – (1381)"
-0 window "uv run use-computer tree --window \"Roberto Conterosito – (1381)\" --human" ...
+$ use-computer tree --window "Mario Rossi – (1381)"
+0 window "uv run use-computer tree --window \"Mario Rossi – (1381)\" --human" ...
 ```
 
 The window asked for is Telegram, and `windows` lists it:
 
 ```
-0/33/0  panel   Roberto Conterosito – (1381)   15872  331,130 1152x784
+0/33/0  panel   Mario Rossi – (1381)   15872  331,130 1152x784
 ```
 
 What came back is the terminal.

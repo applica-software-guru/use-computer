@@ -59,7 +59,7 @@ The cheapest question is "what is open?", and it should not cost a tree.
 ```
 # id app role "title" pid x,y wxh *active
 0/29/0 Ledger window "Conferma" 4711 0,0 1920x1038 *
-0/33/0 TelegramDesktop panel "Roberto Conterosito" 5210 331,130 1152x784
+0/33/0 TelegramDesktop panel "Mario Rossi" 5210 331,130 1152x784
 ```
 
 **The application is reported**, because a title alone does not tell you whose window it is —

@@ -153,7 +153,7 @@ use-computer windows
 
 ```
 id      app              role    title                  pid     box               active
-0/29/0  TelegramDesktop  panel   Roberto Conterosito    15872   331,130 1152x784
+0/29/0  TelegramDesktop  panel   Mario Rossi            15872   331,130 1152x784
 0/34/0  Codex            window  ChatGPT                144775  0,0 1920x1038     *
 ```
 
