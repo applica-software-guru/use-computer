@@ -1489,17 +1489,27 @@ _COMMANDS = frozenset(
 
 
 def apply_default_command(argv: list[str]) -> list[str]:
-    """Insert the default command when argv starts with something that is not a command.
+    """Insert the default command when argv looks like a batch source, not a mistyped command.
 
     This is why the entry point exists: it is the supported way to have a default command in
     typer, and it keeps working across the versions that changed how typer builds its group.
+
+    "Looks like a batch source" is `-` (stdin) or a path that exists -- never a bare word that
+    merely isn't a recognised command. Without that check `use-computer bda-command --help`
+    silently became `batch bda-command --help` and showed batch's help, as if `bda-command` had
+    been understood; a typo left unrewritten instead reaches typer's own dispatch, which reports
+    "No such command" for what was actually typed. A batch file that does not exist yet is the
+    trade: it now gets the same "no such command" rather than a file-not-found, since nothing in
+    the bare word itself says which mistake it is.
     """
     if len(argv) < 2:
         return argv
     first = argv[1]
     if first in _COMMANDS or first.startswith("-") and first != "-":
         return argv
-    return [argv[0], DEFAULT_COMMAND, *argv[1:]]
+    if first == "-" or Path(first).is_file():
+        return [argv[0], DEFAULT_COMMAND, *argv[1:]]
+    return argv
 
 
 def main() -> None:

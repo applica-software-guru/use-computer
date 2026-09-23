@@ -257,12 +257,16 @@ def test_help_lists_every_action(runner: CliRunner) -> None:
 @pytest.mark.parametrize(
     ("argv", "expected"),
     [
-        (["use-computer", "actions.json"], ["use-computer", "batch", "actions.json"]),
         (["use-computer", "-"], ["use-computer", "batch", "-"]),
         (["use-computer", "click", "--x", "1"], ["use-computer", "click", "--x", "1"]),
         (["use-computer", "--help"], ["use-computer", "--help"]),
         (["use-computer", "--version"], ["use-computer", "--version"]),
         (["use-computer"], ["use-computer"]),
+        # A bare word that is not a recognised command and not a file on disk is left alone,
+        # rather than silently rewritten into `batch <that word>`. Typer's own dispatch then
+        # reports "No such command" for what was actually typed -- see BUG-021.
+        (["use-computer", "bad-command"], ["use-computer", "bad-command"]),
+        (["use-computer", "bad-command", "--help"], ["use-computer", "bad-command", "--help"]),
     ],
 )
 def test_the_default_command_is_applied_by_rewriting_argv(
@@ -271,6 +275,23 @@ def test_the_default_command_is_applied_by_rewriting_argv(
     # Never by subclassing TyperGroup: typer 0.27 stopped being click-based and that breaks
     # silently.
     assert apply_default_command(argv) == expected
+
+
+def test_an_existing_batch_file_is_still_routed_to_batch(tmp_path: Path) -> None:
+    source = tmp_path / "actions.json"
+    source.write_text("[]", encoding="utf-8")
+    argv = ["use-computer", str(source)]
+    assert apply_default_command(argv) == ["use-computer", "batch", str(source)]
+
+
+def test_a_typo_that_shadows_a_file_that_does_not_exist_is_not_rewritten(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    # No such file here -- and no such command either. There is nothing in the bare word that
+    # says which one was meant, so it is left for typer to say plainly that it is not a command.
+    argv = ["use-computer", "actions.json"]
+    assert apply_default_command(argv) == argv
 
 
 def test_the_command_list_matches_the_registered_commands() -> None:
@@ -287,6 +308,16 @@ def test_the_command_list_matches_the_registered_commands() -> None:
 @pytest.mark.parametrize("command", sorted(cli._COMMANDS))
 def test_a_known_command_is_never_rewritten(command: str) -> None:
     assert apply_default_command(["use-computer", command]) == ["use-computer", command]
+
+
+def test_a_mistyped_command_says_so_instead_of_running_batch(runner: CliRunner) -> None:
+    # End to end: apply_default_command leaves it alone, and typer's own dispatch is what
+    # answers -- not batch's help, and not a file-not-found for a file nobody meant.
+    argv = apply_default_command(["use-computer", "bad-command", "--help"])
+    result = runner.invoke(app, argv[1:], catch_exceptions=False)
+    assert result.exit_code == EXIT_USAGE
+    assert "No such command" in strip_ansi(result.output)
+    assert "batch" not in strip_ansi(result.output).lower()
 
 
 def test_the_version_is_read_from_the_distribution_that_is_actually_published() -> None:
