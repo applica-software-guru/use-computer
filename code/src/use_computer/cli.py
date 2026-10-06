@@ -1295,9 +1295,11 @@ def config_show(
 
 
 # --- secrets -----------------------------------------------------------------------------------
-# One invariant holds this group together: a secret leaves the store into the keyboard, and never
-# into stdout. So there is no `secret get`, and `list` knows only names. A command that printed a
-# value would be called by the first agent that wanted to check its work.
+# One invariant holds this group together: a secret never enters the agent's context. It leaves the
+# store into the keyboard (`--secret`) or into another command's argument through a shell
+# substitution (`secret get`), and `list` knows only names. `get` adds nothing a process running as
+# the user could not already do with `type --secret`; what keeps it out of the agent's context is
+# the skill, which teaches that it runs only inside `$(...)`.
 
 ProjectStoreOption = Annotated[
     bool,
@@ -1334,7 +1336,7 @@ def secret_set(
 
 @secret_app.command("list")
 def secret_list(format: FormatOption = OutputFormat.TEXT) -> None:
-    """List stored secrets by name. There is no command that prints one."""
+    """List stored secrets by name. Never a value."""
     entries = Secrets().entries()
     if format is OutputFormat.JSON:
         _emit(
@@ -1351,6 +1353,23 @@ def secret_list(format: FormatOption = OutputFormat.TEXT) -> None:
         )
         return
     _write(render.secrets(entries))
+
+
+@secret_app.command("get")
+def secret_get(
+    name: Annotated[str, typer.Argument(help="The secret to print.")],
+) -> None:
+    """Print one secret, raw, for a shell substitution: `fill "$(use-computer secret get NAME)"`.
+
+    Only ever inside `$(...)`, as the argument of the command that uses it: run bare, the value
+    lands in the agent's context. No trailing newline, so a pipe receives the exact bytes.
+    """
+    try:
+        value = Secrets().require(check_name(name))
+    except UseComputerError as exc:
+        _fail(exc)
+    sys.stdout.write(value.get_secret_value())
+    sys.stdout.flush()
 
 
 @secret_app.command("rm")

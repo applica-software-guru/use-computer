@@ -2,8 +2,8 @@
 title: "Interfaces"
 status: synced
 author: ""
-last-modified: "2026-09-17T00:00:00.000Z"
-version: "4.5"
+last-modified: "2026-10-06T00:00:00.000Z"
+version: "4.6"
 ---
 
 # Interfaces
@@ -98,6 +98,7 @@ use-computer config init [--backend local|vnc] [--profile NAME]
 use-computer config show [--format text|json]
 use-computer secret set  NAME [--project]
 use-computer secret list [--format text|json]
+use-computer secret get  NAME
 use-computer secret rm   NAME [--project]
 use-computer skill  install|update|remove|status
                     [--scope user|project|agents|claude] [--dir PATH] [--force]
@@ -502,8 +503,16 @@ removed gh-token from /home/you/.config/use-computer/secrets.toml
 stores and which one each name came from. `--format json` gives `{"secrets": [{"name": …, "store":
 "global"|"project", "set-at": …}]}`.
 
-**There is no `secret get`, and no flag anywhere reveals a value.** `secret list` is names, stores
-and timestamps. Removing a name that does not exist is exit `1`; storing one that does replaces it,
+`secret get NAME` writes the value to stdout raw — no trailing newline, nothing else, never through
+rich — for a shell substitution:
+
+```
+$ playwright-cli fill e12 "$(use-computer secret get gh-token)"
+```
+
+It resolves exactly as `--secret` does (environment, project store, global store) and fails the
+same ways: `SecretNotFoundError` or `SecretUnreadableError`, exit `1`, nothing on stdout. It is the
+only command that prints a value; `secret list` is names, stores and timestamps. Removing a name that does not exist is exit `1`; storing one that does replaces it,
 because a secret that could not be rotated without a second command would be rotated by editing the
 file.
 

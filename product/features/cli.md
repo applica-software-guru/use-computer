@@ -2,8 +2,8 @@
 title: "CLI"
 status: synced
 author: ""
-last-modified: "2026-09-17T00:00:00.000Z"
-version: "3.2"
+last-modified: "2026-10-06T00:00:00.000Z"
+version: "3.3"
 ---
 
 # CLI
@@ -135,8 +135,10 @@ field inside the same single JSON object, and it costs 39% of the tokens the str
 
 `secret set NAME` takes the value on **stdin** — hidden prompt from a TTY, one line from a pipe —
 and never as an argument, because an argument is visible in `ps` and lands in the shell history.
-`secret list` prints names, `secret rm` removes one, and there is no `secret get`: a command that
-printed a secret to stdout would be called by the first agent that wanted to check its work.
+`secret list` prints names, `secret rm` removes one. `secret get NAME` prints one value with no
+trailing newline, for a shell substitution — `playwright-cli fill e12 "$(use-computer secret get
+gh-token)"` — so a tool that fills a field by selector can take a credential the agent never sees.
+Run bare, it would print the value into the agent's context; the skill forbids that.
 
 Actions refer to a stored value by name with `--secret NAME`, which is mutually exclusive with
 `--text` or `--value` on the same action. See [configuration.md](configuration.md) for the store and

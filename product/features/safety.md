@@ -2,8 +2,8 @@
 title: "Safety"
 status: synced
 author: ""
-last-modified: "2026-09-17T00:00:00.000Z"
-version: "1.5"
+last-modified: "2026-10-06T00:00:00.000Z"
+version: "1.6"
 ---
 
 # Safety
@@ -42,16 +42,29 @@ back — in the agent's context a second time. Three of those four outlive the s
 
 So secrets are not a storage feature. They are **one invariant**:
 
-> A secret leaves the store into the keyboard, and never into stdout.
+> A secret never enters the agent's context.
 
 The value is put there out of band by the person at the machine, and from then on it is referred to
-by name: `type --secret gh-token`. The agent composes the command, the tool reads the value, the
-keyboard receives it, and nothing in between is ever printed. See
-[configuration.md](configuration.md) for where the store lives.
+by name. It leaves the store one of two ways, and neither passes through anything the agent reads:
 
-**There is no command that prints a secret, and its absence is the design.** A `secret get` would be
-called by the first agent that wanted to check its work, and the invariant would be gone. If a value
-needs to leave the store, it leaves through the keyboard.
+- **into the keyboard** — `type --secret gh-token`. The agent composes the command, the tool reads
+  the value, the keyboard receives it, and nothing in between is ever printed.
+- **into another command's argument** — `playwright-cli fill e12 "$(use-computer secret get
+  gh-token)"`. The shell expands the substitution; the agent composes and sees the command, never
+  the value.
+
+See [configuration.md](configuration.md) for where the store lives.
+
+The second exists because the keyboard goes wherever focus is. A browser driven by Playwright is
+often not the frontmost window, focus can move while forty keystrokes are synthesised, and
+Playwright already fills a field by selector without any focus — it only needs the value.
+
+`secret get` prints the value to stdout, and that is deliberate rather than a crack in the
+invariant. It adds nothing a process running as you could not already do: as the next section
+says, that process can `type --secret` into any text field and read the credential back. What it
+changes is only the risk of the value landing in the agent's context, and that risk is held where
+the screen leak below is held — by the skill, which teaches that `secret get` runs only inside
+`$(...)`, never bare, and that the receiving command's own output is context too.
 
 ### Encrypted at rest, and what that is worth
 

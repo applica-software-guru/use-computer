@@ -2,8 +2,8 @@
 title: "Configuration"
 status: synced
 author: ""
-last-modified: "2026-09-17T00:00:00.000Z"
-version: "2.3"
+last-modified: "2026-10-06T00:00:00.000Z"
+version: "2.4"
 ---
 
 # Configuration
@@ -128,6 +128,7 @@ use-computer secret set gh-token        # prompts, hidden, when stdin is a TTY
 pass show gh/token | use-computer secret set gh-token
 use-computer secret list
 use-computer secret rm gh-token
+playwright-cli fill e12 "$(use-computer secret get gh-token)"
 ```
 
 **The value is never an argument.** An argument is visible in `ps` for the life of the process and
@@ -135,7 +136,9 @@ is written to the shell history verbatim — the same reason `config init` has n
 From a TTY the command prompts with the input hidden; from a pipe it reads a single line.
 
 `secret list` prints names, where each one is stored and when it was set. It never prints a value,
-not clamped and not behind a flag, and there is no `secret get` at all.
+not clamped and not behind a flag. `secret get` prints exactly one value, raw, for a shell
+substitution to hand to another command — see [safety.md](safety.md) for why that is the only way
+it is meant to run.
 
 ### Where it is stored
 

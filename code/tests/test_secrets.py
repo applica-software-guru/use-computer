@@ -119,10 +119,31 @@ def test_removing_a_name_that_is_not_there_is_a_failure_not_a_silence() -> None:
 # --- the invariant -----------------------------------------------------------------------------
 
 
-def test_there_is_no_command_that_prints_a_secret() -> None:
-    """`secret get` is absent by design, not by omission."""
+def test_get_prints_the_value_and_nothing_else() -> None:
+    """For `$(...)`: the exact bytes, no newline, no decoration."""
     invoke("secret", "set", "gh-token", stdin=VALUE)
-    assert invoke("secret", "get", "gh-token").exit_code != 0
+    result = invoke("secret", "get", "gh-token")
+    assert result.exit_code == 0
+    assert result.stdout == VALUE
+
+
+def test_get_resolves_the_environment_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    invoke("secret", "set", "gh-token", stdin=VALUE)
+    monkeypatch.setenv("USE_COMPUTER_SECRET_GH_TOKEN", "from-the-env")
+    assert invoke("secret", "get", "gh-token").stdout == "from-the-env"
+
+
+def test_get_of_a_missing_name_prints_nothing_and_says_who_stores_it() -> None:
+    result = invoke("secret", "get", "never-stored")
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    message = strip_ansi(result.stderr)
+    assert "secret set never-stored" in message
+    assert "Do not ask them for the value" in message
+
+
+def test_list_never_prints_a_value() -> None:
+    invoke("secret", "set", "gh-token", stdin=VALUE)
     for args in (("secret", "list"), ("secret", "list", "--format", "json")):
         result = invoke(*args)
         assert result.exit_code == 0

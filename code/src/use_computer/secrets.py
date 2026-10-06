@@ -1,8 +1,9 @@
 """The secret store: a value the agent types and never reads.
 
-One invariant holds this module together -- *a secret leaves the store into the keyboard, and never
-into stdout*. So there is no function here that returns every value at once, nothing renders a
-value, and the only way out is :meth:`Secrets.require`, called by the action about to send it.
+One invariant holds this module together -- *a secret never enters the agent's context*. So there
+is no function here that returns every value at once, nothing renders a value, and the only way out
+is :meth:`Secrets.require`, called by the action about to send it or by `secret get` handing it to a
+shell substitution.
 
 The value is a ``SecretStr`` from the moment it is decrypted, which masks it in a ``repr``, a log
 line and a traceback. That is defence in depth rather than the mechanism: the mechanism is that

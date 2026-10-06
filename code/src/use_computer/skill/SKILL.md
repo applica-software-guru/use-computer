@@ -447,8 +447,20 @@ Four rules. The first two are absolute.
    something else — the dialog closing, the next page appearing. The tool refuses to verify a
    secret action for this reason, and says `not verified (secret)` where the change report would
    be; that is expected, not a failure.
-4. **There is no way to read one back.** No command prints a secret. If you cannot find one, that
-   is the design and not a gap.
+4. **`secret get` runs only inside `$(...)`, as the argument of the command that uses it.** Its
+   stdout *is* the password: run bare, piped into something that prints, or echoed "to check", it
+   puts the value in this conversation. Never do any of those.
+
+   ```bash
+   playwright-cli fill e12 "$(use-computer secret get gh-token)"
+   ```
+
+   The receiving command's output is your context too. If it echoes its arguments, prints the
+   code it ran, or returns a snapshot that includes the field's value, the secret comes back that
+   way — so after filling one, rule 3 applies to that field: do not snapshot or screenshot it.
+
+   Use `type --secret` / `set-value --secret` when focus is reliable. Use `secret get` when another
+   tool fills the field by selector without needing focus — a browser driven by Playwright.
 
 `use-computer secret list` shows which names exist, so you can check for the one you need before
 planning around it. It never shows a value.

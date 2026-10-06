@@ -2,8 +2,8 @@
 title: "Agent Skill"
 status: synced
 author: ""
-last-modified: "2026-09-17T00:00:00.000Z"
-version: "5.1"
+last-modified: "2026-10-06T00:00:00.000Z"
+version: "5.2"
 ---
 
 # Agent Skill
@@ -146,8 +146,13 @@ content is part of the specification, not a README:
       at something else, the dialog closing or the next page appearing. The tool refuses to verify
       a secret action on its own account, so `not verified (secret)` is expected rather than a
       failure, and the skill has to say so or the agent retries.
-    - **There is no way to read a secret back.** No command prints one. An agent that cannot find
-      such a command has found the design, not a gap.
+    - **`secret get` runs only inside `$(...)`, as the argument of the command that uses it.**
+      Never bare, never piped into something that prints, never echoed "to check" — its stdout is
+      the value. And the receiving command's output is context too: a tool that echoes its
+      arguments, logs the code it ran, or returns a snapshot holding the field's value hands the
+      secret back, so after filling one the screen rule above applies to that field. `--secret` is
+      the channel when focus is reliable; `secret get` is for a tool that fills a field by selector,
+      such as a browser driven by Playwright.
 
     The first two go first because they are what a smaller model drops first, and they stay
     imperative. The third is worth the most words, because it is the counterintuitive half and the
